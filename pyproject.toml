@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pam"
+version = "0.1.0"
+description = "Private personal assistant foundation"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "pydantic>=2.10,<3.0",
+    "pydantic-settings>=2.6,<3.0",
+    "uvicorn>=0.32,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28,<1.0",
+    "mypy>=1.13,<2.0",
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.24,<1.0",
+    "ruff>=0.8,<1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["pam*"]
+
+[tool.pytest.ini_options]
+testpaths = ["pam/tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+exclude = ["pam/tests"]
+
+[[tool.mypy.overrides]]
+module = ["pydantic_settings"]
+ignore_missing_imports = true
