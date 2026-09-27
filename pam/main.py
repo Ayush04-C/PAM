@@ -9,16 +9,25 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from pam.api.audit import AuditSink, InMemoryAuditSink
+from pam.api.availability import create_availability_router
+from pam.application import AvailabilityService
+from pam.application.local_calendar import create_local_availability_service
 from pam.logging import configure_logging, request_id_context
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
 
-def create_app() -> FastAPI:
-    """Create the minimal, dependency-free PAM HTTP application."""
+def create_app(
+    availability_service: AvailabilityService | None = None,
+    audit_sink: AuditSink | None = None,
+) -> FastAPI:
+    """Create PAM's local HTTP application with explicit dependencies."""
     configure_logging()
     app = FastAPI(title="PAM", version="0.1.0")
     logger = logging.getLogger("pam.http")
+    service = availability_service or create_local_availability_service()
+    recorder = audit_sink or InMemoryAuditSink()
 
     @app.middleware("http")
     async def add_request_id(
@@ -40,6 +49,8 @@ def create_app() -> FastAPI:
     async def health() -> JSONResponse:
         """Provide a deterministic local liveness response."""
         return JSONResponse({"status": "ok"})
+
+    app.include_router(create_availability_router(service, recorder))
 
     return app
 
