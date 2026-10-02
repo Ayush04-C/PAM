@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import datetime
 
 from pam.conversation.mcp_client import CalendarMcpClient, McpUnavailable
 from pam.conversation.models import ModelTurn, ToolDefinition, ToolResult
 from pam.conversation.provider import ModelProvider, ModelUnavailable
+from pam.conversation.store import ConversationStore, InMemoryConversationStore
 from pam.conversation.system_prompt import build_system_instruction
 from pam.domain import DISPLAY_TIMEZONE
 
@@ -28,23 +30,39 @@ class ConversationService:
         clock: Callable[[], datetime] | None = None,
         max_tool_rounds: int = 2,
         on_tool_invoked: Callable[[str], None] | None = None,
+        conversation_store: ConversationStore | None = None,
     ) -> None:
         self._provider = provider
         self._calendar_mcp = calendar_mcp
         self._clock = clock or (lambda: datetime.now(DISPLAY_TIMEZONE))
         self._max_tool_rounds = max_tool_rounds
         self._on_tool_invoked = on_tool_invoked
+        self._conversation_store = conversation_store or InMemoryConversationStore()
+        self._session_locks: dict[str, asyncio.Lock] = {}
 
-    async def respond(self, user_message: str) -> str:
+    async def respond(self, user_message: str, *, session_id: str = "default") -> str:
         """Return a safe text answer without exposing provider or MCP internals."""
         if not user_message.strip():
             return "Please ask a Calendar availability question."
+        lock = self._session_locks.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            return await self._respond_in_session(user_message, session_id)
+
+    async def clear(self, session_id: str) -> None:
+        """Clear one session explicitly without contacting a provider or Calendar."""
+        lock = self._session_locks.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            await self._conversation_store.clear(session_id)
+
+    async def _respond_in_session(self, user_message: str, session_id: str) -> str:
+        """Process and atomically commit one successful conversation turn."""
         now = self._clock()
         turn = ModelTurn(
             user_message=user_message,
             system_instruction=build_system_instruction(now),
             current_time=now,
             tools=await self._tools_or_empty(),
+            history=await self._conversation_store.load(session_id),
         )
         try:
             decision = await self._provider.respond(turn)
@@ -55,6 +73,9 @@ class ConversationService:
 
         for _ in range(self._max_tool_rounds):
             if decision.text is not None:
+                await self._conversation_store.commit_turn(
+                    session_id, user_message, decision.text
+                )
                 return decision.text
             assert decision.tool_call is not None
             if decision.tool_call.name != _ALLOWED_TOOL:
