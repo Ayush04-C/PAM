@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from pam.api.audit import InMemoryAuditSink
 from pam.application import AvailabilityService
 from pam.application.local_calendar import create_local_availability_service
+from pam.config import Settings
 from pam.domain import DISPLAY_TIMEZONE, CalendarEvent
 from pam.main import REQUEST_ID_HEADER, create_app
 
@@ -121,7 +122,9 @@ def test_unavailable_calendar_maps_to_safe_503_with_request_id() -> None:
 
 def test_availability_preserves_incoming_request_id_and_records_safe_audit() -> None:
     audit_sink = InMemoryAuditSink()
-    response = TestClient(create_app(audit_sink=audit_sink)).post(
+    response = TestClient(
+        create_app(audit_sink=audit_sink, settings=Settings(_env_file=None))
+    ).post(
         "/availability", json=REQUEST_BODY, headers={REQUEST_ID_HEADER: "api-request"}
     )
 
