@@ -26,6 +26,7 @@ from pam.conversation.service import ConversationService
 from pam.conversation.store import InMemoryConversationStore
 from pam.logging import configure_logging
 from pam.mcp.server import create_mcp_server
+from pam.memory.factory import create_memory_service
 from pam.telegram.adapter import Reply, TelegramAdapter
 
 logger = logging.getLogger("pam.telegram")
@@ -53,6 +54,7 @@ def build_conversation_service(settings: Settings) -> ConversationService:
             settings.conversation_max_history_messages,
             settings.conversation_max_sessions,
         ),
+        memory_service=create_memory_service(settings),
         on_tool_invoked=(
             lambda tool_name: (
                 logger.info("tool invoked", extra={"tool_name": tool_name})

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
+from pam.memory.models import RecalledMemory
+
 
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
@@ -51,6 +53,7 @@ class ModelTurn:
     current_time: datetime
     tools: tuple[ToolDefinition, ...]
     history: tuple[ConversationMessage, ...] = ()
+    memories: tuple[RecalledMemory, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

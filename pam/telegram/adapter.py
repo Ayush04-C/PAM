@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
+from pam.memory.models import MemoryOwnerId
+
 MAX_INCOMING_TEXT_LENGTH = 4_096
 MAX_OUTGOING_TEXT_LENGTH = 4_096
 START_MESSAGE = (
@@ -27,7 +29,9 @@ Reply = Callable[[str], Awaitable[None]]
 class ConversationResponder(Protocol):
     """The sole conversation dependency needed by the Telegram transport."""
 
-    async def respond(self, user_message: str, *, session_id: str) -> str:
+    async def respond(
+        self, user_message: str, *, session_id: str, memory_owner: MemoryOwnerId
+    ) -> str:
         """Produce a safe single-turn reply."""
 
     async def clear(self, session_id: str) -> None:
@@ -76,7 +80,9 @@ class TelegramAdapter:
             return
         try:
             response = await self._conversation_service.respond(
-                text, session_id=session_id
+                text,
+                session_id=session_id,
+                memory_owner=MemoryOwnerId(f"telegram:{user_id}"),
             )
         except Exception:
             await reply(SERVICE_FAILURE_MESSAGE)
