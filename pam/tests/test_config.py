@@ -12,6 +12,8 @@ def test_production_rejects_missing_secret() -> None:
 
 
 def test_development_allows_placeholder_configuration() -> None:
-    settings = Settings(environment="development", _env_file=None)
+    settings = Settings(
+        environment="development", _env_file=None, model_provider="fake"
+    )
 
     assert settings.app_secret is None

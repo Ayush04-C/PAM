@@ -22,9 +22,12 @@ class Settings(BaseSettings):
     google_redirect_uri: str | None = None
     credential_encryption_key: SecretStr | None = None
     credential_storage_path: Path = Path(".pam-google-credentials.bin")
-    model_provider: Literal["fake", "gemini"] = "fake"
+    model_provider: Literal["fake", "gemini", "bharatcode"] = "bharatcode"
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
+    bharatcode_api_key: SecretStr | None = None
+    bharatcode_base_url: str = "https://bharatcode.ai/api/model/v1"
+    bharatcode_model: str = "deepseek-v4.1-flash"
     conversation_debug_tool_calls: bool = False
     telegram_enabled: bool = False
     telegram_bot_token: SecretStr | None = None
@@ -66,6 +69,10 @@ class Settings(BaseSettings):
                 )
         if self.model_provider == "gemini" and self.gemini_api_key is None:
             raise ValueError("GEMINI_API_KEY is required when model provider is gemini")
+        if self.model_provider == "bharatcode" and self.bharatcode_api_key is None:
+            raise ValueError(
+                "BHARATCODE_API_KEY is required when model provider is bharatcode"
+            )
         if self.telegram_enabled:
             if self.telegram_bot_token is None:
                 raise ValueError(
