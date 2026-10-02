@@ -10,6 +10,8 @@ from pam.conversation.mcp_client import local_client_from_server
 from pam.conversation.service import ConversationService
 from pam.conversation.store import InMemoryConversationStore
 from pam.mcp.server import create_mcp_server
+from pam.memory.factory import create_memory_service
+from pam.memory.models import MemoryOwnerId
 
 
 async def run() -> None:
@@ -28,6 +30,7 @@ async def run() -> None:
             settings.conversation_max_history_messages,
             settings.conversation_max_sessions,
         ),
+        memory_service=create_memory_service(settings),
         on_tool_invoked=(
             (lambda tool_name: tool_debugger(f"tool invoked: {tool_name}"))
             if tool_debugger is not None
@@ -46,7 +49,13 @@ async def run() -> None:
             await service.clear("cli:local")
             print("Started a new conversation.")
             continue
-        print(await service.respond(message, session_id="cli:local"))
+        print(
+            await service.respond(
+                message,
+                session_id="cli:local",
+                memory_owner=MemoryOwnerId(settings.memory_cli_owner_id),
+            )
+        )
 
 
 def main() -> None:
