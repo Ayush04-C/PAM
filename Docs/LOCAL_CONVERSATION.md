@@ -8,25 +8,27 @@ CLI -> ConversationService -> ModelProvider -> Calendar MCP
                                           -> AvailabilityService -> CalendarReader
 ```
 
-## Configure Gemini
+## Configure BharatCode
 
 In the ignored `.env` file, set:
 
 ```dotenv
-PAM_MODEL_PROVIDER=gemini
-PAM_GEMINI_API_KEY=your-gemini-api-key
-PAM_GEMINI_MODEL=gemini-2.5-flash
+PAM_MODEL_PROVIDER=bharatcode
+PAM_BHARATCODE_API_KEY=your-bharatcode-api-key
+PAM_BHARATCODE_BASE_URL=https://bharatcode.ai/api/model/v1
+PAM_BHARATCODE_MODEL=deepseek-v4.1-flash
 PAM_CONVERSATION_DEBUG_TOOL_CALLS=false
 ```
 
-`gemini-2.5-flash` is configurable and is the default because it supports
-function calling while targeting low-latency, price-conscious conversations.
-The implementation uses the maintained `google-genai` package. Keep API keys
-out of source control and do not place them in prompts, MCP requests, or logs.
+Use `python -m pam.conversation.bharatcode_models` to list the models enabled
+for the local key. BharatCode uses its OpenAI-compatible `/chat/completions`
+endpoint. Keep API keys out of source control and do not place them in prompts,
+MCP requests, or logs. Gemini remains an explicit optional provider for local
+comparison when `PAM_MODEL_PROVIDER=gemini`.
 
 ## Run the CLI
 
-With the virtual environment active and Gemini configured:
+With the virtual environment active and a provider configured:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pam.conversation.cli
@@ -41,7 +43,7 @@ network or Gemini calls.
 
 ## Trust and privacy boundary
 
-Gemini may receive the user question, the explicit Asia/Kolkata current time,
+The selected provider may receive the user question, the explicit Asia/Kolkata current time,
 the approved MCP tool schema, and the structured availability result required
 to answer the question. It does not receive OAuth client secrets, Google access
 or refresh tokens, credential encryption keys, credential-store content, or the
@@ -55,7 +57,7 @@ and all tool values as data, never instructions.
 
 ## Manual verification
 
-Use a local ignored `.env` with real Gemini and Google configuration. Start the
+Use a local ignored `.env` with real BharatCode and Google configuration. Start the
 CLI and ask availability questions such as today, tomorrow, next Monday, and a
 multi-day range. Confirm the local MCP tool is used by temporarily setting
 `PAM_CONVERSATION_DEBUG_TOOL_CALLS=true`; it prints only `tool invoked:` and the
