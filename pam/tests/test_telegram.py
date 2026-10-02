@@ -34,13 +34,19 @@ class RecordingConversation:
     def __init__(self, response: str = "You are free.") -> None:
         self.response = response
         self.messages: list[str] = []
+        self.session_ids: list[str] = []
+        self.cleared_session_ids: list[str] = []
         self.fail = False
 
-    async def respond(self, user_message: str) -> str:
+    async def respond(self, user_message: str, *, session_id: str) -> str:
         self.messages.append(user_message)
+        self.session_ids.append(session_id)
         if self.fail:
             raise RuntimeError("TELEGRAM_TOKEN_DO_NOT_LEAK")
         return self.response
+
+    async def clear(self, session_id: str) -> None:
+        self.cleared_session_ids.append(session_id)
 
 
 async def replies_for(
@@ -72,6 +78,18 @@ async def test_start_and_help_are_static_and_do_not_call_conversation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_new_clears_only_authorized_private_session_without_model_call() -> None:
+    conversation = RecordingConversation()
+    adapter = TelegramAdapter(conversation, (7,))
+
+    assert await replies_for(adapter, text="/new") == ["Started a new conversation."]
+    assert conversation.cleared_session_ids == ["telegram:7"]
+    assert conversation.messages == []
+    assert await replies_for(adapter, user_id=8, text="/new") == [ACCESS_DENIED_MESSAGE]
+    assert conversation.cleared_session_ids == ["telegram:7"]
+
+
+@pytest.mark.asyncio
 async def test_authorized_private_text_preserves_exact_input_and_response() -> None:
     conversation = RecordingConversation("Your availability is clear.")
     adapter = TelegramAdapter(conversation, (7,))
@@ -80,6 +98,7 @@ async def test_authorized_private_text_preserves_exact_input_and_response() -> N
         "Your availability is clear."
     ]
     assert conversation.messages == [" How busy am I today? "]
+    assert conversation.session_ids == ["telegram:7"]
 
 
 @pytest.mark.asyncio
