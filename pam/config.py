@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr, model_validator
@@ -15,10 +16,28 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "production"] = "development"
     app_secret: SecretStr | None = None
+    calendar_backend: Literal["fake", "google"] = "fake"
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    google_redirect_uri: str | None = None
+    credential_encryption_key: SecretStr | None = None
+    credential_storage_path: Path = Path(".pam-google-credentials.bin")
 
     @model_validator(mode="after")
     def require_production_secret(self) -> Settings:
         """Require a secret only when running in production."""
         if self.environment == "production" and self.app_secret is None:
             raise ValueError("PAM_APP_SECRET is required in production")
+        if self.calendar_backend == "google":
+            required_values = (
+                self.google_client_id,
+                self.google_client_secret,
+                self.google_redirect_uri,
+                self.credential_encryption_key,
+            )
+            if any(value is None for value in required_values):
+                raise ValueError(
+                    "Google OAuth configuration is required when "
+                    "PAM_CALENDAR_BACKEND=google"
+                )
         return self
