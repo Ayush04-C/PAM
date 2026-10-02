@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     google_redirect_uri: str | None = None
     credential_encryption_key: SecretStr | None = None
     credential_storage_path: Path = Path(".pam-google-credentials.bin")
+    model_provider: Literal["fake", "gemini"] = "fake"
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    conversation_debug_tool_calls: bool = False
 
     @model_validator(mode="after")
     def require_production_secret(self) -> Settings:
@@ -40,4 +44,6 @@ class Settings(BaseSettings):
                     "Google OAuth configuration is required when "
                     "PAM_CALENDAR_BACKEND=google"
                 )
+        if self.model_provider == "gemini" and self.gemini_api_key is None:
+            raise ValueError("GEMINI_API_KEY is required when model provider is gemini")
         return self
