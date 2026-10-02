@@ -23,6 +23,7 @@ class ToolCall:
 
     name: str
     arguments: Mapping[str, Any]
+    call_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
