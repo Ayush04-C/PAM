@@ -23,6 +23,7 @@ from pam.config import Settings
 from pam.conversation.factory import create_model_provider
 from pam.conversation.mcp_client import local_client_from_server
 from pam.conversation.service import ConversationService
+from pam.conversation.store import InMemoryConversationStore
 from pam.logging import configure_logging
 from pam.mcp.server import create_mcp_server
 from pam.telegram.adapter import Reply, TelegramAdapter
@@ -48,6 +49,10 @@ def build_conversation_service(settings: Settings) -> ConversationService:
     return ConversationService(
         provider,
         local_client_from_server(create_mcp_server(settings)),
+        conversation_store=InMemoryConversationStore(
+            settings.conversation_max_history_messages,
+            settings.conversation_max_sessions,
+        ),
         on_tool_invoked=(
             lambda tool_name: (
                 logger.info("tool invoked", extra={"tool_name": tool_name})
@@ -79,6 +84,16 @@ class TelegramUpdateHandler:
             user_id=_user_id(update),
             chat_type=_chat_type(update),
             text="/help",
+            reply=_reply_for(update),
+        )
+
+    async def new(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Clear one authorized private conversation without model execution."""
+        del context
+        await self._adapter.handle_text(
+            user_id=_user_id(update),
+            chat_type=_chat_type(update),
+            text="/new",
             reply=_reply_for(update),
         )
 
@@ -118,6 +133,7 @@ def build_telegram_application(
     )
     application.add_handler(CommandHandler("start", handler.start))
     application.add_handler(CommandHandler("help", handler.help))
+    application.add_handler(CommandHandler("new", handler.new))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handler.text)
     )
