@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     google_redirect_uri: str | None = None
     credential_encryption_key: SecretStr | None = None
     credential_storage_path: Path = Path(".pam-google-credentials.bin")
-    model_provider: Literal["fake", "gemini", "bharatcode"] = "bharatcode"
+    model_provider: Literal["fake", "gemini", "bharatcode"] = "fake"
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
     bharatcode_api_key: SecretStr | None = None

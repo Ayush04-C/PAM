@@ -17,3 +17,4 @@ def test_development_allows_placeholder_configuration() -> None:
     )
 
     assert settings.app_secret is None
+    assert settings.model_provider == "fake"

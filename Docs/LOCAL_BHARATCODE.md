@@ -1,8 +1,9 @@
 # Local BharatCode provider
 
-Phase 7.5 makes BharatCode the default hosted provider while retaining Gemini
-as an explicitly selected legacy provider. The provider remains behind PAM's
-existing `ModelProvider` interface:
+Phase 7.5 makes BharatCode the documented active hosted-provider configuration
+while retaining Gemini as an explicitly selected legacy provider. The safe code
+fallback remains `fake`, so imports and offline CI never require a hosted key.
+The provider remains behind PAM's existing `ModelProvider` interface:
 
 ```text
 CLI or Telegram -> ConversationService -> BharatCodeProvider -> local Calendar MCP
