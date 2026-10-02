@@ -123,7 +123,10 @@ def test_unavailable_calendar_maps_to_safe_503_with_request_id() -> None:
 def test_availability_preserves_incoming_request_id_and_records_safe_audit() -> None:
     audit_sink = InMemoryAuditSink()
     response = TestClient(
-        create_app(audit_sink=audit_sink, settings=Settings(_env_file=None))
+        create_app(
+            audit_sink=audit_sink,
+            settings=Settings(_env_file=None, model_provider="fake"),
+        )
     ).post(
         "/availability", json=REQUEST_BODY, headers={REQUEST_ID_HEADER: "api-request"}
     )

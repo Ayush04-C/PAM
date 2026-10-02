@@ -140,16 +140,18 @@ def test_long_plain_text_is_split_at_safe_boundaries() -> None:
 
 def test_telegram_enabled_requires_numeric_allowlist_and_token() -> None:
     with pytest.raises(ValueError, match="TELEGRAM_BOT_TOKEN"):
-        Settings(_env_file=None, telegram_enabled=True)
+        Settings(_env_file=None, telegram_enabled=True, model_provider="fake")
     with pytest.raises(ValueError, match="TELEGRAM_ALLOWED_USER_IDS"):
         Settings(
             _env_file=None,
             telegram_enabled=True,
+            model_provider="fake",
             telegram_bot_token="telegram-token-do-not-log",
         )
     settings = Settings(
         _env_file=None,
         telegram_enabled=True,
+        model_provider="fake",
         telegram_bot_token="telegram-token-do-not-log",
         telegram_allowed_user_ids="7, 8",
     )
@@ -157,6 +159,7 @@ def test_telegram_enabled_requires_numeric_allowlist_and_token() -> None:
     numeric_setting = Settings(
         _env_file=None,
         telegram_enabled=True,
+        model_provider="fake",
         telegram_bot_token="telegram-token-do-not-log",
         telegram_allowed_user_ids=7,
     )
