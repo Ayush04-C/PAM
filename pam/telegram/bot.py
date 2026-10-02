@@ -20,7 +20,7 @@ from telegram.ext import (
 )
 
 from pam.config import Settings
-from pam.conversation.gemini import GeminiProvider
+from pam.conversation.factory import create_model_provider
 from pam.conversation.mcp_client import local_client_from_server
 from pam.conversation.service import ConversationService
 from pam.logging import configure_logging
@@ -44,11 +44,7 @@ type TelegramApplication = Application[
 
 def build_conversation_service(settings: Settings) -> ConversationService:
     """Build application-lifetime conversation dependencies once for polling."""
-    if settings.model_provider != "gemini" or settings.gemini_api_key is None:
-        raise ValueError("Telegram requires PAM_MODEL_PROVIDER=gemini")
-    provider = GeminiProvider(
-        settings.gemini_api_key.get_secret_value(), settings.gemini_model
-    )
+    provider = create_model_provider(settings)
     return ConversationService(
         provider,
         local_client_from_server(create_mcp_server(settings)),
