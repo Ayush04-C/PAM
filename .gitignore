@@ -10,6 +10,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.pam-google-credentials.bin
 .idea/
 .vscode/
 .DS_Store
