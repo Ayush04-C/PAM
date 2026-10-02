@@ -233,22 +233,20 @@ class FakeGeminiModels:
 
 @pytest.mark.asyncio
 async def test_gemini_adapter_uses_function_response_channel() -> None:
-    called_content = types.Content(role="model", parts=[])
     first = SimpleNamespace(
         function_calls=[SimpleNamespace(name="get_weekly_availability", args=REQUEST)],
         text=None,
-        candidates=[SimpleNamespace(content=called_content)],
+        candidates=[],
     )
     second = SimpleNamespace(
         function_calls=[],
         text="You are free.",
-        candidates=[SimpleNamespace(content=types.Content(role="model", parts=[]))],
+        candidates=[],
     )
     models = FakeGeminiModels([first, second])
     provider = object.__new__(GeminiProvider)
     provider._client = SimpleNamespace(models=models)
     provider._model = "gemini-2.5-flash"
-    provider._previous_model_content = None
     turn = ModelTurn("Am I free?", "safe system instruction", FROZEN_NOW, (TOOL,))
 
     decision = await provider.respond(turn)
@@ -262,7 +260,9 @@ async def test_gemini_adapter_uses_function_response_channel() -> None:
     assert final.text == "You are free."
     assert models.calls[0]["model"] == "gemini-2.5-flash"
     follow_up = models.calls[1]["contents"]
-    assert called_content in follow_up
+    function_call_content = follow_up[-2]
+    assert isinstance(function_call_content, types.Content)
+    assert function_call_content.parts[0].function_call is not None
     response_content = follow_up[-1]
     assert isinstance(response_content, types.Content)
     assert response_content.parts[0].function_response is not None
