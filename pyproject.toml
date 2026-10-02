@@ -17,6 +17,7 @@ dependencies = [
     "mcp>=2.0,<3.0",
     "pydantic>=2.10,<3.0",
     "pydantic-settings>=2.6,<3.0",
+    "python-telegram-bot>=22.8,<23.0",
     "tzdata>=2025.2",
     "uvicorn>=0.32,<1.0",
 ]
