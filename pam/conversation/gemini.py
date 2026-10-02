@@ -17,22 +17,25 @@ class GeminiProvider:
     def __init__(self, api_key: str, model: str) -> None:
         self._client = genai.Client(api_key=api_key)
         self._model = model
-        self._previous_model_content: types.Content | None = None
 
     async def respond(self, turn: ModelTurn) -> ModelDecision:
-        response = await self._generate([turn.user_message], turn)
-        self._previous_model_content = self._model_content(response)
+        response = await self._generate(self._initial_contents(turn), turn)
         return self._decision_from_response(response)
 
     async def respond_after_tool(
         self, turn: ModelTurn, tool_call: ToolCall, tool_result: ToolResult
     ) -> ModelDecision:
-        if self._previous_model_content is None:
-            raise ModelUnavailable("model provider returned an invalid response")
         response = await self._generate(
             [
-                turn.user_message,
-                self._previous_model_content,
+                *self._initial_contents(turn),
+                types.Content(
+                    role="model",
+                    parts=[
+                        types.Part.from_function_call(
+                            name=tool_call.name, args=dict(tool_call.arguments)
+                        )
+                    ],
+                ),
                 types.Content(
                     role="user",
                     parts=[
@@ -45,7 +48,6 @@ class GeminiProvider:
             ],
             turn,
         )
-        self._previous_model_content = self._model_content(response)
         return self._decision_from_response(response)
 
     async def _generate(self, contents: list[object], turn: ModelTurn) -> object:
@@ -75,6 +77,19 @@ class GeminiProvider:
             raise ModelUnavailable("model provider is unavailable") from error
 
     @staticmethod
+    def _initial_contents(turn: ModelTurn) -> list[object]:
+        return [
+            *[
+                types.Content(
+                    role="model" if message.role == "assistant" else "user",
+                    parts=[types.Part(text=message.content)],
+                )
+                for message in turn.history
+            ],
+            turn.user_message,
+        ]
+
+    @staticmethod
     def _decision_from_response(response: object) -> ModelDecision:
         function_calls = getattr(response, "function_calls", None)
         if function_calls:
@@ -87,13 +102,3 @@ class GeminiProvider:
         if isinstance(text, str) and text.strip():
             return ModelDecision(text=text)
         raise ModelUnavailable("model provider returned an invalid response")
-
-    @staticmethod
-    def _model_content(response: object) -> types.Content:
-        candidates = getattr(response, "candidates", None)
-        if not candidates:
-            raise ModelUnavailable("model provider returned an invalid response")
-        content = getattr(candidates[0], "content", None)
-        if not isinstance(content, types.Content):
-            raise ModelUnavailable("model provider returned an invalid response")
-        return content
