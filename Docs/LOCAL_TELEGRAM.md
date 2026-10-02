@@ -42,10 +42,12 @@ and malformed updates never reach `ConversationService`.
 .\.venv\Scripts\python.exe -m pam.telegram.bot
 ```
 
-Open the bot and send `/start`, `/help`, or a text question such as `How busy
-am I today?`. `/start` and `/help` are static responses and do not call Gemini
-or Calendar MCP. Other authorized text reaches the same single-turn
-`ConversationService` used by the local CLI.
+Open the bot and send `/start`, `/help`, `/new`, or a text question such as
+`How busy am I today?`. `/start` and `/help` are static responses and do not
+call a provider or Calendar MCP. `/new` clears only the authorized private
+chat's in-memory context without calling a provider or MCP. Other authorized
+text reaches the same bounded multi-turn `ConversationService` used by the
+local CLI.
 
 Only text is supported in Phase 7. Media receives a short text-only response.
 Incoming text is limited to 4,096 characters. Longer plain-text answers are
