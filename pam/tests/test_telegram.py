@@ -38,7 +38,10 @@ class RecordingConversation:
         self.cleared_session_ids: list[str] = []
         self.fail = False
 
-    async def respond(self, user_message: str, *, session_id: str) -> str:
+    async def respond(
+        self, user_message: str, *, session_id: str, memory_owner: object
+    ) -> str:
+        del memory_owner
         self.messages.append(user_message)
         self.session_ids.append(session_id)
         if self.fail:
