@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     credential_encryption_key: SecretStr | None = None
     credential_storage_path: Path = Path(".pam-google-credentials.bin")
     model_provider: Literal["fake", "gemini", "bharatcode"] = "fake"
+    memory_backend: Literal["disabled", "supermemory"] = "disabled"
+    supermemory_api_key: SecretStr | None = None
+    supermemory_base_url: str = "https://api.supermemory.ai"
+    memory_max_recalled_items: int = 5
+    memory_max_content_chars: int = 500
+    memory_cli_owner_id: str = "cli-local"
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
     bharatcode_api_key: SecretStr | None = None
@@ -75,6 +81,10 @@ class Settings(BaseSettings):
             raise ValueError(
                 "BHARATCODE_API_KEY is required when model provider is bharatcode"
             )
+        if self.memory_backend == "supermemory" and self.supermemory_api_key is None:
+            raise ValueError(
+                "SUPERMEMORY_API_KEY is required when memory backend is supermemory"
+            )
         if self.telegram_enabled:
             if self.telegram_bot_token is None:
                 raise ValueError(
@@ -90,4 +100,10 @@ class Settings(BaseSettings):
             )
         if not 1 <= self.conversation_max_sessions <= 1_000:
             raise ValueError("CONVERSATION_MAX_SESSIONS must be between 1 and 1000")
+        if not 1 <= self.memory_max_recalled_items <= 20:
+            raise ValueError("MEMORY_MAX_RECALLED_ITEMS must be between 1 and 20")
+        if not 100 <= self.memory_max_content_chars <= 4_000:
+            raise ValueError("MEMORY_MAX_CONTENT_CHARS must be between 100 and 4000")
+        if not self.memory_cli_owner_id.strip():
+            raise ValueError("MEMORY_CLI_OWNER_ID must not be empty")
         return self
