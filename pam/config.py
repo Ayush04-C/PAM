@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     bharatcode_base_url: str = "https://bharatcode.ai/api/model/v1"
     bharatcode_model: str = "deepseek-v4.1-flash"
     conversation_debug_tool_calls: bool = False
+    conversation_max_history_messages: int = 20
+    conversation_max_sessions: int = 100
     telegram_enabled: bool = False
     telegram_bot_token: SecretStr | None = None
     telegram_allowed_user_ids: tuple[int, ...] = ()
@@ -82,4 +84,10 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "TELEGRAM_ALLOWED_USER_IDS is required when Telegram is enabled"
                 )
+        if not 1 <= self.conversation_max_history_messages <= 100:
+            raise ValueError(
+                "CONVERSATION_MAX_HISTORY_MESSAGES must be between 1 and 100"
+            )
+        if not 1 <= self.conversation_max_sessions <= 1_000:
+            raise ValueError("CONVERSATION_MAX_SESSIONS must be between 1 and 1000")
         return self

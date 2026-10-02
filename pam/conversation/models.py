@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +35,14 @@ class ToolResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ConversationMessage:
+    """Portable private conversational context retained between successful turns."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
 class ModelTurn:
     """All non-secret context given to a provider for one user turn."""
 
@@ -42,6 +50,7 @@ class ModelTurn:
     system_instruction: str
     current_time: datetime
     tools: tuple[ToolDefinition, ...]
+    history: tuple[ConversationMessage, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

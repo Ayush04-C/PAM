@@ -35,22 +35,35 @@ class BharatCodeProvider:
             api_key=api_key, base_url=base_url, max_retries=1, timeout=30.0
         )
         self._model = model
-        self._previous_assistant_message: dict[str, Any] | None = None
 
     async def respond(self, turn: ModelTurn) -> ModelDecision:
         completion = await self._create_completion(self._initial_messages(turn), turn)
         message = self._message_from_completion(completion)
-        self._previous_assistant_message = self._assistant_message(message)
         return self._decision_from_message(message)
 
     async def respond_after_tool(
         self, turn: ModelTurn, tool_call: ToolCall, tool_result: ToolResult
     ) -> ModelDecision:
-        if tool_call.call_id is None or self._previous_assistant_message is None:
+        if tool_call.call_id is None:
             raise ModelUnavailable("model provider returned an invalid tool call")
         messages = [
             *self._initial_messages(turn),
-            self._previous_assistant_message,
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tool_call.call_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.name,
+                            "arguments": json.dumps(
+                                dict(tool_call.arguments), separators=(",", ":")
+                            ),
+                        },
+                    }
+                ],
+            },
             {
                 "role": "tool",
                 "tool_call_id": tool_call.call_id,
@@ -59,7 +72,6 @@ class BharatCodeProvider:
         ]
         completion = await self._create_completion(messages, turn)
         message = self._message_from_completion(completion)
-        self._previous_assistant_message = self._assistant_message(message)
         return self._decision_from_message(message)
 
     async def _create_completion(
@@ -99,6 +111,10 @@ class BharatCodeProvider:
     def _initial_messages(turn: ModelTurn) -> list[dict[str, Any]]:
         return [
             {"role": "system", "content": turn.system_instruction},
+            *[
+                {"role": message.role, "content": message.content}
+                for message in turn.history
+            ],
             {"role": "user", "content": turn.user_message},
         ]
 
@@ -111,27 +127,6 @@ class BharatCodeProvider:
         if message is None:
             raise ModelUnavailable("model provider returned an invalid response")
         return message
-
-    @staticmethod
-    def _assistant_message(message: Any) -> dict[str, Any]:
-        tool_calls = getattr(message, "tool_calls", None) or []
-        return {
-            "role": "assistant",
-            "content": getattr(message, "content", None),
-            "tool_calls": [
-                {
-                    "id": getattr(call, "id", None),
-                    "type": "function",
-                    "function": {
-                        "name": getattr(getattr(call, "function", None), "name", None),
-                        "arguments": getattr(
-                            getattr(call, "function", None), "arguments", None
-                        ),
-                    },
-                }
-                for call in tool_calls
-            ],
-        }
 
     @staticmethod
     def _decision_from_message(message: Any) -> ModelDecision:

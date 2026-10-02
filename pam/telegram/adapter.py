@@ -27,8 +27,11 @@ Reply = Callable[[str], Awaitable[None]]
 class ConversationResponder(Protocol):
     """The sole conversation dependency needed by the Telegram transport."""
 
-    async def respond(self, user_message: str) -> str:
+    async def respond(self, user_message: str, *, session_id: str) -> str:
         """Produce a safe single-turn reply."""
+
+    async def clear(self, session_id: str) -> None:
+        """Clear one explicitly selected session."""
 
 
 class TelegramAdapter:
@@ -66,8 +69,15 @@ class TelegramAdapter:
         if text == "/help":
             await reply(HELP_MESSAGE)
             return
+        session_id = f"telegram:{user_id}"
+        if text == "/new":
+            await self._conversation_service.clear(session_id)
+            await reply("Started a new conversation.")
+            return
         try:
-            response = await self._conversation_service.respond(text)
+            response = await self._conversation_service.respond(
+                text, session_id=session_id
+            )
         except Exception:
             await reply(SERVICE_FAILURE_MESSAGE)
             return

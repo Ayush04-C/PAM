@@ -8,6 +8,7 @@ from pam.config import Settings
 from pam.conversation.factory import create_model_provider
 from pam.conversation.mcp_client import local_client_from_server
 from pam.conversation.service import ConversationService
+from pam.conversation.store import InMemoryConversationStore
 from pam.mcp.server import create_mcp_server
 
 
@@ -23,6 +24,10 @@ async def run() -> None:
     service = ConversationService(
         provider,
         local_client_from_server(create_mcp_server(settings)),
+        conversation_store=InMemoryConversationStore(
+            settings.conversation_max_history_messages,
+            settings.conversation_max_sessions,
+        ),
         on_tool_invoked=(
             (lambda tool_name: tool_debugger(f"tool invoked: {tool_name}"))
             if tool_debugger is not None
@@ -37,7 +42,11 @@ async def run() -> None:
             return
         if message.lower() in {"exit", "quit"}:
             return
-        print(await service.respond(message))
+        if message == "/new":
+            await service.clear("cli:local")
+            print("Started a new conversation.")
+            continue
+        print(await service.respond(message, session_id="cli:local"))
 
 
 def main() -> None:

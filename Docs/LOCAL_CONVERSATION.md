@@ -34,8 +34,9 @@ With the virtual environment active and a provider configured:
 .\.venv\Scripts\python.exe -m pam.conversation.cli
 ```
 
-Ask one independent question per prompt and use `quit` or `exit` to leave. For
-example: `How busy am I next Monday?`
+Questions share bounded in-memory context within the running CLI process. Use
+`/new` to clear that local context, or `quit`/`exit` to leave; a restart begins
+a fresh session. For example: `How busy am I next Monday?`
 
 For offline automated development, leave `PAM_MODEL_PROVIDER=fake`; the test
 suite uses `ScriptedModelProvider` and a fake Calendar reader, and makes no

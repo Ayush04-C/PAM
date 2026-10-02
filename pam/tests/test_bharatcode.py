@@ -11,7 +11,13 @@ import pytest
 
 from pam.config import Settings
 from pam.conversation.bharatcode import BharatCodeProvider
-from pam.conversation.models import ModelTurn, ToolCall, ToolDefinition, ToolResult
+from pam.conversation.models import (
+    ConversationMessage,
+    ModelTurn,
+    ToolCall,
+    ToolDefinition,
+    ToolResult,
+)
 from pam.conversation.provider import ModelUnavailable
 from pam.domain import DISPLAY_TIMEZONE
 
@@ -74,6 +80,33 @@ async def test_direct_response_sends_system_user_and_approved_schema() -> None:
     assert request["messages"][1]["content"] == TURN.user_message
     assert request["tools"][0]["function"]["parameters"] == dict(TOOL.input_schema)
     assert "bc-key-do-not-leak" not in str(request)
+
+
+@pytest.mark.asyncio
+async def test_provider_translates_portable_history_in_chronological_order() -> None:
+    client, completions = fake_client(
+        [completion(SimpleNamespace(content="Follow-up answer.", tool_calls=[]))]
+    )
+    provider = BharatCodeProvider("key", "model", "https://x", client=client)
+    turn = ModelTurn(
+        TURN.user_message,
+        TURN.system_instruction,
+        TURN.current_time,
+        TURN.tools,
+        (
+            ConversationMessage("user", "What days are free?"),
+            ConversationMessage("assistant", "October 3 and 4."),
+        ),
+    )
+
+    await provider.respond(turn)
+
+    assert completions.calls[0]["messages"] == [
+        {"role": "system", "content": TURN.system_instruction},
+        {"role": "user", "content": "What days are free?"},
+        {"role": "assistant", "content": "October 3 and 4."},
+        {"role": "user", "content": TURN.user_message},
+    ]
 
 
 @pytest.mark.asyncio
