@@ -13,6 +13,20 @@ The production host is an Azure Linux VM running Ubuntu 24.04 LTS on x86_64.
 It uses Python 3.12 and `uv`; PAM is installed at `~/PAM` with its virtual
 environment at `~/PAM/.venv`.
 
+```mermaid
+flowchart TD
+    U[Telegram users] --> TG[Telegram cloud]
+    TG -->|outbound long polling| PM2[PM2 pam-telegram process]
+    PM2 --> PY[Python 3.12 virtual environment]
+    PY --> PAM[PAM bot modules]
+    PAM --> G[Google APIs]
+    PAM --> B[BharatCode or Gemini]
+    PAM --> S[Supermemory when enabled]
+    ENV[Protected service environment] --> PY
+    CREDS[Encrypted Google credential file] --> PY
+    PM2 --> LOG[PM2 logs]
+```
+
 ```text
 Telegram
     |

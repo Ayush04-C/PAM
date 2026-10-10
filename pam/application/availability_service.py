@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from pam.application.calendar_reader import CalendarReader
 from pam.domain import (
     DISPLAY_TIMEZONE,
+    WeeklyAvailability,
     calculate_weekly_availability,
     format_weekly_availability,
 )
@@ -34,6 +35,14 @@ class AvailabilityService:
         self, start_date: date, end_date: date, timezone: ZoneInfo = DISPLAY_TIMEZONE
     ) -> str:
         """Return the documented weekly summary for a validated requested range."""
+        return format_weekly_availability(
+            self.get_structured_availability(start_date, end_date, timezone)
+        )
+
+    def get_structured_availability(
+        self, start_date: date, end_date: date, timezone: ZoneInfo = DISPLAY_TIMEZONE
+    ) -> WeeklyAvailability:
+        """Return the one deterministic Calendar truth for all presentation paths."""
         _validate_request(start_date, end_date, timezone)
         try:
             events = self.calendar_reader.read_events(start_date, end_date, timezone)
@@ -43,7 +52,7 @@ class AvailabilityService:
         availability = calculate_weekly_availability(
             start_date, end_date, events, timezone
         )
-        return format_weekly_availability(availability)
+        return availability
 
 
 def _validate_request(start_date: date, end_date: date, timezone: ZoneInfo) -> None:

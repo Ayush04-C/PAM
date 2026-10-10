@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,6 +12,7 @@ from pam.domain import (
     CalendarEvent,
     CalendarEventValidationError,
     TimedInterval,
+    build_availability_presentation,
     calculate_weekly_availability,
     format_weekly_availability,
     merge_timed_intervals,
@@ -262,6 +263,140 @@ def test_unsorted_event_input_produces_sorted_day_events() -> None:
         "Earlier",
         "Later",
     ]
+
+
+def test_free_intervals_include_natural_day_boundaries_and_gaps() -> None:
+    day = date(2026, 10, 6)
+    availability = calculate_weekly_availability(
+        day,
+        day,
+        [
+            timed_event(
+                "MM333", kolkata_datetime(day, 9, 30), kolkata_datetime(day, 10, 30)
+            ),
+            timed_event(
+                "MM329", kolkata_datetime(day, 10, 30), kolkata_datetime(day, 11, 30)
+            ),
+            timed_event(
+                "MM331", kolkata_datetime(day, 11, 30), kolkata_datetime(day, 12, 30)
+            ),
+            timed_event("MM335", kolkata_datetime(day, 14), kolkata_datetime(day, 17)),
+        ],
+    )
+
+    intervals = availability.days[0].free_intervals
+
+    assert [
+        (item.start.strftime("%H:%M"), item.end.strftime("%H:%M")) for item in intervals
+    ] == [
+        ("00:00", "09:30"),
+        ("12:30", "14:00"),
+        ("17:00", "00:00"),
+    ]
+
+
+def test_all_day_commitment_has_no_free_intervals() -> None:
+    day = date(2026, 10, 6)
+    availability = calculate_weekly_availability(
+        day, day, [CalendarEvent("Holiday", all_day_date=day)]
+    )
+
+    assert availability.days[0].free_intervals == ()
+
+
+@pytest.mark.parametrize(
+    ("duration_minutes", "expected_windows"),
+    [
+        (30, ("10:00–10:30", "11:00–11:30")),
+        (60, ("11:00–12:00",)),
+        (120, ("11:00–13:00",)),
+        (180, ()),
+    ],
+)
+def test_presentation_filters_candidates_by_requested_duration(
+    duration_minutes: int, expected_windows: tuple[str, ...]
+) -> None:
+    day = date(2026, 10, 6)
+    availability = calculate_weekly_availability(
+        day,
+        day,
+        [
+            timed_event("Start", kolkata_datetime(day, 0), kolkata_datetime(day, 10)),
+            timed_event(
+                "One", kolkata_datetime(day, 10, 30), kolkata_datetime(day, 11)
+            ),
+            timed_event(
+                "Two",
+                kolkata_datetime(day, 13),
+                kolkata_datetime(day + timedelta(days=1), 0),
+            ),
+        ],
+    )
+
+    presentation = build_availability_presentation(
+        availability, minimum_duration_minutes=duration_minutes
+    )
+    result = presentation["days"][0]
+
+    assert isinstance(result, dict)
+    assert tuple(window["label"] for window in result["candidate_slots"]) == (
+        expected_windows
+    )
+
+
+def test_open_ended_free_windows_do_not_authorize_concrete_candidate_slots() -> None:
+    day = date(2026, 10, 6)
+    availability = calculate_weekly_availability(
+        day,
+        day,
+        [
+            timed_event(
+                "Morning", kolkata_datetime(day, 9, 30), kolkata_datetime(day, 12, 30)
+            ),
+        ],
+    )
+
+    presentation = build_availability_presentation(
+        availability, minimum_duration_minutes=120
+    )
+    result = presentation["days"][0]
+
+    assert isinstance(result, dict)
+    assert {window["label"] for window in result["free_windows"]} == {
+        "Before 09:30",
+        "After 12:30",
+    }
+    assert result["candidate_slots"] == ()
+
+
+def test_presentation_reports_specific_time_and_truthful_weekly_ties() -> None:
+    monday = date(2026, 10, 5)
+    availability = calculate_weekly_availability(
+        monday,
+        monday + timedelta(days=2),
+        [
+            timed_event(
+                "Lecture", kolkata_datetime(monday, 10), kolkata_datetime(monday, 12)
+            ),
+            timed_event(
+                "Workshop",
+                kolkata_datetime(monday + timedelta(days=1), 10),
+                kolkata_datetime(monday + timedelta(days=1), 12),
+            ),
+        ],
+    )
+
+    presentation = build_availability_presentation(
+        availability, requested_time=time(13)
+    )
+    days = presentation["days"]
+    weekly = presentation["weekly"]
+
+    assert isinstance(days, tuple)
+    assert isinstance(weekly, dict)
+    assert days[0]["requested_time_is_free"] is True
+    assert weekly["busiest_days"] == ("2026-10-05", "2026-10-06")
+    assert weekly["openest_days"] == ("2026-10-07",)
 
 
 def test_weekly_formatter_matches_documented_golden_output() -> None:

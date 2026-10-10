@@ -9,6 +9,9 @@ PAM combines a conversational model with a deliberately narrow Calendar tool:
 it can read availability but cannot create, edit, delete, or otherwise modify
 Calendar events.
 
+For the complete, current technical documentation, start with
+[Docs/README.md](Docs/README.md).
+
 ## What PAM does
 
 - Answers questions such as “How busy am I next Monday?” and “When am I free

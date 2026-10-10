@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 from typing import Any, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -19,6 +19,7 @@ from pam.application import (
     CalendarUnavailable,
     InvalidAvailabilityRequest,
 )
+from pam.domain import build_availability_presentation, format_weekly_availability
 
 _TOOL_NAME = "get_weekly_availability"
 _TOOL_DESCRIPTION = (
@@ -38,6 +39,8 @@ class WeeklyAvailabilityRequest(ArgModelBase):
     start_date: date
     end_date: date
     timezone: str
+    minimum_duration_minutes: int | None = None
+    requested_time: str | None = None
 
     @classmethod
     def model_validate(
@@ -87,13 +90,34 @@ class WeeklyAvailabilityRequest(ArgModelBase):
             raise ValueError("timezone must be an IANA timezone") from error
         return value
 
+    @field_validator("minimum_duration_minutes")
+    @classmethod
+    def require_positive_duration(cls, value: int | None) -> int | None:
+        if value is not None and not 1 <= value <= 24 * 60:
+            raise ValueError("duration must be between 1 and 1440 minutes")
+        return value
+
+    @field_validator("requested_time")
+    @classmethod
+    def require_iso_time(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = time.fromisoformat(value)
+        except ValueError as error:
+            raise ValueError("time must be an HH:MM string") from error
+        if parsed.second or parsed.microsecond:
+            raise ValueError("time must be an HH:MM string")
+        return value
+
 
 class WeeklyAvailabilityResponse(ArgModelBase):
-    """Minimal structured MCP output containing the application summary verbatim."""
+    """Calendar summary plus deterministic presentation facts."""
 
     model_config = ConfigDict(extra="forbid")
 
     availability: str
+    presentation: dict[str, object]
 
 
 class CalendarMcpAdapter:
@@ -103,11 +127,16 @@ class CalendarMcpAdapter:
         self._availability_service = availability_service
 
     def get_weekly_availability(
-        self, start_date: date, end_date: date, timezone: str
+        self,
+        start_date: date,
+        end_date: date,
+        timezone: str,
+        minimum_duration_minutes: int | None = None,
+        requested_time: str | None = None,
     ) -> WeeklyAvailabilityResponse:
         """Return the exact deterministic AvailabilityService result."""
         try:
-            summary = self._availability_service.get_weekly_availability(
+            availability = self._availability_service.get_structured_availability(
                 start_date, end_date, ZoneInfo(timezone)
             )
         except InvalidAvailabilityRequest as error:
@@ -116,7 +145,17 @@ class CalendarMcpAdapter:
             raise ToolError(
                 "calendar is unavailable; reconnection may be required"
             ) from error
-        return WeeklyAvailabilityResponse(availability=summary)
+        if requested_time is not None and start_date != end_date:
+            raise ToolError("requested time requires a single calendar day")
+        parsed_time = time.fromisoformat(requested_time) if requested_time else None
+        return WeeklyAvailabilityResponse(
+            availability=format_weekly_availability(availability),
+            presentation=build_availability_presentation(
+                availability,
+                minimum_duration_minutes=minimum_duration_minutes,
+                requested_time=parsed_time,
+            ),
+        )
 
 
 def create_calendar_mcp_server(availability_service: AvailabilityService) -> MCPServer:

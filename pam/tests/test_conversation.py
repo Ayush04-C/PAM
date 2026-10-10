@@ -219,6 +219,7 @@ async def test_real_phase_five_mcp_and_fake_calendar_integrate_offline() -> None
     )
     assert "2 hours busy" in provider.tool_results[0].result["availability"]
     assert "Lecture" in provider.tool_results[0].result["availability"]
+    assert provider.tool_results[0].result["presentation"]["days"][0]["free_windows"]
 
 
 class FakeGeminiModels:

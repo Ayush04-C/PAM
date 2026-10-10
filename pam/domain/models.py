@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 
 class CalendarEventValidationError(ValueError):
@@ -94,6 +95,36 @@ class DayAvailability:
     def is_free(self) -> bool:
         """Whether the day has neither timed nor all-day commitments."""
         return not self.timed_intervals and not self.all_day_commitments
+
+    @property
+    def free_intervals(self) -> tuple[TimedInterval, ...]:
+        """Return deterministic free gaps within this local calendar day.
+
+        An all-day commitment occupies the complete calendar day. Otherwise the
+        already-normalized merged intervals define the only busy truth, so gaps
+        include the natural boundaries before the first and after the last event.
+        """
+        if self.all_day_commitments:
+            return ()
+        timezone = (
+            self.merged_intervals[0].start.tzinfo
+            if self.merged_intervals
+            else ZoneInfo("Asia/Kolkata")
+        )
+        assert timezone is not None
+        day_start = datetime.combine(self.day, time.min, tzinfo=timezone)
+        day_end = datetime.combine(
+            self.day + timedelta(days=1), time.min, tzinfo=timezone
+        )
+        cursor = day_start
+        free: list[TimedInterval] = []
+        for interval in self.merged_intervals:
+            if cursor < interval.start:
+                free.append(TimedInterval(cursor, interval.start))
+            cursor = max(cursor, interval.end)
+        if cursor < day_end:
+            free.append(TimedInterval(cursor, day_end))
+        return tuple(free)
 
 
 @dataclass(frozen=True, slots=True)
