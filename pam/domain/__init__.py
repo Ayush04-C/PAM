@@ -15,6 +15,7 @@ from pam.domain.models import (
     TimedInterval,
     WeeklyAvailability,
 )
+from pam.domain.presentation import build_availability_presentation
 
 __all__ = [
     "DISPLAY_TIMEZONE",
@@ -25,6 +26,7 @@ __all__ = [
     "WeeklyAvailability",
     "calculate_weekly_availability",
     "format_weekly_availability",
+    "build_availability_presentation",
     "merge_timed_intervals",
     "normalize_timestamp",
     "split_interval_by_day",

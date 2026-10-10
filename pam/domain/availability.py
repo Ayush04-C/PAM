@@ -37,7 +37,8 @@ def split_interval_by_day(interval: TimedInterval) -> tuple[TimedInterval, ...]:
         )
         pieces.append(TimedInterval(cursor, next_midnight, interval.title))
         cursor = next_midnight
-    pieces.append(TimedInterval(cursor, interval.end, interval.title))
+    if cursor < interval.end:
+        pieces.append(TimedInterval(cursor, interval.end, interval.title))
     return tuple(pieces)
 
 
