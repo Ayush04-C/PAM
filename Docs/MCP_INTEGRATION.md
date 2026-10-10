@@ -38,4 +38,3 @@ Offline tests cover the server tool schema, malformed input rejection, Calendar-
 **Implemented:** one private stdio Calendar MCP server and one read-only availability tool, used internally by PAM.
 
 **Not implemented:** a remote/public MCP deployment, cross-service discovery, multiple independently deployed servers, or write-capable tools. Those are future architecture work; see [ROADMAP.md](ROADMAP.md).
-

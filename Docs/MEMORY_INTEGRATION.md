@@ -33,4 +33,3 @@ Calendar tool results are excluded from passive durable ingestion. This avoids p
 ## Test coverage
 
 Offline tests use fake persistent memory backends to verify owner isolation, update/supersession behavior, restart persistence independent of transient history, explicit remember/forget, `/new` behavior, bounded recall, injection resistance, and Calendar-over-memory precedence. Live Supermemory acceptance requires separately provisioned credentials and is not a substitute for the offline suite.
-
