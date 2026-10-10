@@ -221,6 +221,9 @@ async def test_real_conversation_and_real_phase_five_mcp_integrate_offline() -> 
         "You are busy for 2 hours on Monday."
     ]
     assert "2 hours busy" in provider.tool_results[0].result["availability"]
+    assert not provider.tool_results[0].result["presentation"]["days"][0][
+        "candidate_slots"
+    ]
 
 
 def test_invalid_telegram_token_exits_without_echoing_the_secret(

@@ -62,9 +62,10 @@ class LocalCalendarMcpClient:
         if response.is_error or not isinstance(response.structured_content, dict):
             raise McpUnavailable("calendar assistant is unavailable")
         availability = response.structured_content.get("availability")
-        if not isinstance(availability, str):
+        presentation = response.structured_content.get("presentation")
+        if not isinstance(availability, str) or not isinstance(presentation, dict):
             raise McpUnavailable("calendar assistant is unavailable")
-        return {"availability": availability}
+        return {"availability": availability, "presentation": presentation}
 
 
 def local_client_from_server(server: MCPServer) -> LocalCalendarMcpClient:
