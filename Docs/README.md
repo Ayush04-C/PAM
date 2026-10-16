@@ -36,6 +36,7 @@ environment.
 | Verification and incident runbooks | [TESTING_AND_OPERATIONS.md](TESTING_AND_OPERATIONS.md) |
 | Proposed future phases | [ROADMAP.md](ROADMAP.md) |
 | Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
+| Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](GOOGLE_DRIVE_ARCHITECTURE.md) |
 | Availability presentation contract | [AVAILABILITY_PRESENTATION.md](AVAILABILITY_PRESENTATION.md) |
 
 ## Existing focused local guides

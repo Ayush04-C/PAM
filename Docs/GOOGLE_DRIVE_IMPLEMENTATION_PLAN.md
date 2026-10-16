@@ -3,6 +3,10 @@
 Status: planning proposal for architecture review; no feature implemented.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
+Review companion added 2026-10-16: [proposed workflow and architecture diagrams](GOOGLE_DRIVE_ARCHITECTURE.md).
+These user-requested draft views do not finalize open architecture decisions or
+authorize implementation. The original audit below remains dated 2026-10-10.
+
 ## 1. Scope and non-goals
 
 Add read-only Google Drive capabilities to the existing PAM Telegram assistant
