@@ -20,13 +20,9 @@ from telegram.ext import (
 )
 
 from pam.config import Settings
-from pam.conversation.factory import create_model_provider
-from pam.conversation.mcp_client import local_client_from_server, local_drive_support
+from pam.conversation.factory import create_conversation_service
 from pam.conversation.service import ConversationService
-from pam.conversation.store import InMemoryConversationStore
 from pam.logging import configure_logging
-from pam.mcp.server import create_mcp_server
-from pam.memory.factory import create_memory_service
 from pam.telegram.adapter import Reply, TelegramAdapter
 
 logger = logging.getLogger("pam.telegram")
@@ -46,26 +42,12 @@ type TelegramApplication = Application[
 
 def build_conversation_service(settings: Settings) -> ConversationService:
     """Build application-lifetime conversation dependencies once for polling."""
-    provider = create_model_provider(settings)
-    server = create_mcp_server(settings)
-    drive_mcp, consent_loader = local_drive_support(server, settings)
-    return ConversationService(
-        provider,
-        local_client_from_server(server),
-        drive_mcp=drive_mcp,
-        drive_consent_loader=consent_loader,
-        conversation_store=InMemoryConversationStore(
-            settings.conversation_max_history_messages,
-            settings.conversation_max_sessions,
-        ),
-        memory_service=create_memory_service(settings),
-        drive_max_context_chars=settings.drive_max_context_chars,
+    return create_conversation_service(
+        settings,
         on_tool_invoked=(
-            lambda tool_name: (
-                logger.info("tool invoked", extra={"tool_name": tool_name})
-                if settings.conversation_debug_tool_calls
-                else None
-            )
+            (lambda name: logger.info("tool invoked", extra={"tool_name": name}))
+            if settings.conversation_debug_tool_calls
+            else None
         ),
     )
 
@@ -131,7 +113,11 @@ def build_telegram_application(
     """Construct polling handlers with an injected existing conversation service."""
     if settings.telegram_bot_token is None:
         raise ValueError("Telegram bot token is required")
-    adapter = TelegramAdapter(conversation_service, settings.telegram_allowed_user_ids)
+    adapter = TelegramAdapter(
+        conversation_service,
+        settings.telegram_allowed_user_ids,
+        capability_help=conversation_service.capability_help,
+    )
     handler = TelegramUpdateHandler(adapter)
     application = (
         ApplicationBuilder()
