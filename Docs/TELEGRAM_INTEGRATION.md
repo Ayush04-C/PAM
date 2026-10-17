@@ -22,6 +22,13 @@ The authenticated Telegram user supplies both `telegram:<user-id>` as the sessio
 
 ## Commands and formatting
 
+CLI and Telegram share `create_conversation_service`. In the real bot, `/start`
+and `/help` describe Drive metadata only for the authenticated owner with current
+transfer consent; this checks the local grant without live API requests. File
+choices and follow-up selections use the same bounded session rules as CLI.
+`/new` clears both history and file choices. A CLI owner's grant does not grant
+Drive access to a Telegram owner. See [Stage 8](Driver/STAGE_08_REFERENCES_AND_MEMORY.md).
+
 | Input | Behavior |
 | --- | --- |
 | `/start` | Sends a short PAM introduction. |
