@@ -115,6 +115,11 @@ class GoogleDriveReader:
     def __init__(self, authorization: DriveAuthorization) -> None:
         self._authorization = authorization
 
+    @property
+    def owner(self) -> MemoryOwnerId:
+        """Expose trusted configured identity for private single-owner composition."""
+        return self._authorization.owner
+
     def search(
         self,
         owner: MemoryOwnerId,
