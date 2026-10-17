@@ -77,5 +77,6 @@ def create_conversation_service(
         ),
         memory_service=create_memory_service(settings),
         drive_max_context_chars=settings.drive_max_context_chars,
+        drive_content_enabled=settings.drive_content_enabled,
         on_tool_invoked=on_tool_invoked,
     )
