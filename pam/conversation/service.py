@@ -1,24 +1,34 @@
-"""Bounded orchestration of an untrusted model and approved MCP tool."""
+"""Bounded, consent-gated orchestration of Calendar and Drive metadata tools."""
 
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import uuid
 from collections.abc import Callable
+from contextlib import suppress
+from dataclasses import replace
 from datetime import datetime
+from typing import Any
 
-from pam.conversation.mcp_client import CalendarMcpClient, McpUnavailable
+from pam.conversation.mcp_client import (
+    DRIVE_TOOLS,
+    CalendarMcpClient,
+    DriveMcpClient,
+    McpUnavailable,
+)
 from pam.conversation.models import (
     DriveBoundary,
     DriveConsent,
-    DriveConsentRequired,
     DriveContext,
     DriveDataKind,
     ModelTurn,
     ToolDefinition,
+    ToolExchange,
     ToolResult,
 )
-from pam.conversation.provider import ModelProvider, ModelUnavailable
+from pam.conversation.provider import ModelProvider
 from pam.conversation.store import ConversationStore, InMemoryConversationStore
 from pam.conversation.system_prompt import build_system_instruction
 from pam.domain import DISPLAY_TIMEZONE
@@ -38,7 +48,7 @@ _CONSENT_FAILURE = (
 
 
 class ConversationService:
-    """Run one model-led turn, permitting only Calendar availability through MCP."""
+    """Route allowlisted reads while keeping Drive provenance and consent intact."""
 
     def __init__(
         self,
@@ -51,10 +61,14 @@ class ConversationService:
         conversation_store: ConversationStore | None = None,
         memory_service: MemoryService | None = None,
         drive_max_context_chars: int = 20_000,
+        drive_mcp: DriveMcpClient | None = None,
+        drive_consent_loader: Callable[[MemoryOwnerId], DriveConsent] | None = None,
     ) -> None:
         if not 1 <= drive_max_context_chars <= 20_000:
             raise ValueError("Drive context limit must be between 1 and 20000")
         self._drive_max_context_chars = drive_max_context_chars
+        self._drive_mcp = drive_mcp
+        self._drive_consent_loader = drive_consent_loader
         self._provider = provider
         self._calendar_mcp = calendar_mcp
         self._clock = clock or (lambda: datetime.now(DISPLAY_TIMEZONE))
@@ -109,107 +123,275 @@ class ConversationService:
         drive_context: DriveContext | None,
         drive_consent: DriveConsent | None,
     ) -> str:
-        """Process and atomically commit one successful conversation turn."""
+        """Route bounded sequential calls; gate every sensitive model request."""
         now = self._clock()
         history = await self._conversation_store.load(session_id)
-        boundaries = [m.drive_boundary for m in history if m.drive_boundary is not None]
-        boundary = None
-        if drive_context is not None or boundaries:
-            destination = getattr(self._provider, "data_destination", None)
-            if (
-                drive_consent is None
-                or not isinstance(destination, str)
-                or any(
-                    b.owner != owner or b.model_destination != destination
-                    for b in boundaries
+        required = [m.drive_boundary for m in history if m.drive_boundary is not None]
+        if drive_context is not None:
+            permission = self._authorize(owner, drive_consent, drive_context.kind)
+            if permission is None:
+                return _CONSENT_FAILURE
+            required.append(permission)
+        if not self._permissions_match(owner, drive_consent, required):
+            return _CONSENT_FAILURE
+        drive_permission = (
+            self._authorize(owner, drive_consent, "metadata")
+            if self._drive_mcp is not None
+            else None
+        )
+        tools = list(await self._tools_or_empty())
+        if drive_permission is not None and self._drive_mcp is not None:
+            with suppress(Exception):
+                tools.extend(
+                    tool
+                    for tool in await self._drive_mcp.discover_tools()
+                    if tool.name in DRIVE_TOOLS
                 )
-            ):
-                return _CONSENT_FAILURE
-            kind: DriveDataKind = (
-                "content"
-                if any(b.kind == "content" for b in boundaries)
-                or (drive_context is not None and drive_context.kind == "content")
-                else "metadata"
-            )
-            try:
-                boundary = drive_consent.authorize_transfer(owner, destination, kind)
-                for previous in boundaries:
-                    drive_consent.authorize_transfer(owner, destination, previous.kind)
-                if drive_context is not None:
-                    drive_consent.authorize_transfer(
-                        owner, destination, drive_context.kind
-                    )
-            except DriveConsentRequired:
-                return _CONSENT_FAILURE
+        drive_offered = any(tool.name in DRIVE_TOOLS for tool in tools)
+        # A tool-eligible request can include private filenames before retrieval.
+        # Conservatively avoid all automatic memory I/O on these turns.
         try:
             memories = (
                 await self._memory_service.recall(owner, user_message)
-                if boundary is None
+                if not required and not drive_offered
                 else ()
             )
-        except MemoryUnavailable:
-            memories = ()
         except Exception:
             memories = ()
         turn = ModelTurn(
             user_message=user_message,
             system_instruction=build_system_instruction(now),
             current_time=now,
-            tools=await self._tools_or_empty(),
+            tools=tuple(tools),
             history=history,
             memories=memories,
             drive_context=drive_context,
         )
+        if not self._permissions_match(owner, drive_consent, required):
+            return _CONSENT_FAILURE
+        if drive_offered and self._authorize(owner, drive_consent, "metadata") is None:
+            turn = replace(
+                turn, tools=tuple(t for t in turn.tools if t.name not in DRIVE_TOOLS)
+            )
+            drive_offered = False
         try:
             decision = await self._provider.respond(turn)
-        except ModelUnavailable:
-            return _MODEL_FAILURE
         except Exception:
             return _MODEL_FAILURE
-
-        for _ in range(self._max_tool_rounds):
+        limit = 6 if drive_offered else self._max_tool_rounds
+        calendar_calls = 0
+        calls = 0
+        drive_chars = len(drive_context.text) if drive_context is not None else 0
+        while True:
+            if not self._permissions_match(owner, drive_consent, required):
+                return self._partial_answer(turn, _CONSENT_FAILURE)
             if decision.text is not None:
+                boundary = next((b for b in required if b.kind == "content"), None)
+                boundary = boundary or next(iter(required), None)
                 return await self._complete_turn(
                     session_id,
                     owner,
                     user_message,
                     decision.text,
-                    ingest=True,
+                    ingest=calls == 0 and not drive_offered,
                     drive_boundary=boundary,
+                )
+            if calls >= limit:
+                if not drive_offered:
+                    return _TOOL_FAILURE
+                return self._partial_answer(
+                    turn, "The tool-call limit was reached. Please narrow the request."
                 )
             assert decision.tool_call is not None
-            if decision.tool_call.name != _ALLOWED_TOOL:
-                return _READ_ONLY
-            if self._on_tool_invoked is not None:
-                self._on_tool_invoked(_ALLOWED_TOOL)
-            try:
-                result = await self._calendar_mcp.get_weekly_availability(
-                    decision.tool_call.arguments
+            call = decision.tool_call
+            if call.call_id is not None and any(
+                exchange.call.call_id == call.call_id
+                for exchange in turn.tool_exchanges
+            ):
+                return self._partial_answer(
+                    turn, "The model repeated a tool-call identifier. Please retry."
                 )
-            except McpUnavailable:
-                return _TOOL_FAILURE
-            except Exception:
-                return _TOOL_FAILURE
+            if call.name != _ALLOWED_TOOL and call.name not in DRIVE_TOOLS:
+                return self._partial_answer(
+                    turn,
+                    "Calendar and Drive are read-only; only availability and "
+                    "file metadata are supported."
+                    if drive_offered
+                    else _READ_ONLY,
+                )
+            is_drive = call.name in DRIVE_TOOLS
+            if is_drive:
+                permission = self._authorize(owner, drive_consent, "metadata")
+                if permission is None or not drive_offered or self._drive_mcp is None:
+                    return self._partial_answer(turn, _CONSENT_FAILURE)
+                required.append(permission)
+                if not self._reference_allowed(turn, call.name, dict(call.arguments)):
+                    result = self._drive_error("invalid_request")
+                else:
+                    if self._on_tool_invoked is not None:
+                        self._on_tool_invoked(call.name)
+                    try:
+                        result = dict(
+                            await self._drive_mcp.call_tool(
+                                call.name, call.arguments, owner
+                            )
+                        )
+                    except Exception:
+                        result = self._drive_error("temporary_failure")
+                drive_chars += len(
+                    json.dumps(
+                        {"arguments": dict(call.arguments), "result": result},
+                        ensure_ascii=False,
+                    )
+                )
+                if drive_chars > self._drive_max_context_chars:
+                    return self._partial_answer(
+                        turn,
+                        "Drive metadata exceeds the configured context limit. "
+                        "Request fewer files.",
+                    )
+            else:
+                if calendar_calls >= self._max_tool_rounds:
+                    return self._partial_answer(
+                        turn,
+                        "The Calendar tool-call limit was reached. "
+                        "Please narrow the request.",
+                    )
+                calendar_calls += 1
+                if self._on_tool_invoked is not None:
+                    self._on_tool_invoked(_ALLOWED_TOOL)
+                try:
+                    result = dict(
+                        await self._calendar_mcp.get_weekly_availability(call.arguments)
+                    )
+                except Exception:
+                    if not drive_offered:
+                        return _TOOL_FAILURE
+                    result = {
+                        "error": {
+                            "code": "calendar_unavailable",
+                            "message": _TOOL_FAILURE,
+                        }
+                    }
+            calls += 1
+            if not self._permissions_match(owner, drive_consent, required):
+                return self._partial_answer(turn, _CONSENT_FAILURE)
+            if (
+                drive_offered
+                and self._authorize(owner, drive_consent, "metadata") is None
+            ):
+                turn = replace(
+                    turn,
+                    tools=tuple(t for t in turn.tools if t.name not in DRIVE_TOOLS),
+                )
+            completed_turn = replace(
+                turn,
+                tool_exchanges=(
+                    *turn.tool_exchanges,
+                    ToolExchange(call, ToolResult(call.name, result)),
+                ),
+            )
             try:
                 decision = await self._provider.respond_after_tool(
-                    turn,
-                    decision.tool_call,
-                    ToolResult(_ALLOWED_TOOL, result),
+                    turn, call, ToolResult(call.name, result)
                 )
-            except ModelUnavailable:
-                return _MODEL_FAILURE
             except Exception:
-                return _MODEL_FAILURE
-            if decision.text is not None:
-                return await self._complete_turn(
-                    session_id,
-                    owner,
-                    user_message,
-                    decision.text,
-                    ingest=False,
-                    drive_boundary=boundary,
-                )
-        return _TOOL_FAILURE
+                return self._partial_answer(completed_turn, _MODEL_FAILURE)
+            turn = completed_turn
+
+    def _authorize(
+        self,
+        owner: MemoryOwnerId,
+        supplied: DriveConsent | None,
+        kind: DriveDataKind,
+    ) -> DriveBoundary | None:
+        try:
+            consent = (
+                self._drive_consent_loader(owner)
+                if self._drive_consent_loader
+                else supplied
+            )
+            destination = getattr(self._provider, "data_destination", None)
+            if consent is None or not isinstance(destination, str):
+                return None
+            return consent.authorize_transfer(owner, destination, kind)
+        except Exception:
+            return None
+
+    def _permissions_match(
+        self,
+        owner: MemoryOwnerId,
+        supplied: DriveConsent | None,
+        required: list[DriveBoundary],
+    ) -> bool:
+        destination = getattr(self._provider, "data_destination", None)
+        if any(
+            b.owner != owner or b.model_destination != destination for b in required
+        ):
+            return False
+        return all(
+            self._authorize(owner, supplied, kind) is not None
+            for kind in {b.kind for b in required}
+        )
+
+    @staticmethod
+    def _reference_allowed(
+        turn: ModelTurn, name: str, arguments: dict[str, Any]
+    ) -> bool:
+        if name == "drive_get_file_metadata":
+            identifier = arguments.get("file_id")
+            if not isinstance(identifier, str) or not re.fullmatch(
+                r"[A-Za-z0-9_-]{1,256}", identifier
+            ):
+                return False
+            known = {
+                file["file_id"]
+                for exchange in turn.tool_exchanges
+                if exchange.call.name in DRIVE_TOOLS
+                for file in exchange.result.result.get("files", [])
+            }
+            explicit = re.search(
+                r"(?<![A-Za-z0-9_-])" + re.escape(identifier) + r"(?![A-Za-z0-9_-])",
+                turn.user_message,
+            )
+            return identifier in known or explicit is not None
+        token = arguments.get("page_token")
+        if token is None:
+            return True
+        return any(
+            exchange.call.name == "drive_search_files"
+            and exchange.result.result.get("next_page_token") == token
+            and exchange.call.arguments.get("name") == arguments.get("name")
+            and exchange.call.arguments.get("page_size", 10)
+            == arguments.get("page_size", 10)
+            for exchange in turn.tool_exchanges
+        )
+
+    @staticmethod
+    def _drive_error(code: str) -> dict[str, Any]:
+        return {
+            "source": "google_drive",
+            "data_kind": "metadata",
+            "untrusted": True,
+            "files": [],
+            "next_page_token": None,
+            "incomplete_search": False,
+            "error": {
+                "code": code,
+                "message": "Drive metadata request failed safely. "
+                "Check the request or reconnect.",
+                "retryable": code == "temporary_failure",
+            },
+        }
+
+    @staticmethod
+    def _partial_answer(turn: ModelTurn, reason: str) -> str:
+        for exchange in reversed(turn.tool_exchanges):
+            if exchange.call.name == _ALLOWED_TOOL:
+                availability = exchange.result.result.get("availability")
+                if isinstance(availability, str):
+                    return availability + "\n\n" + reason
+        return reason
 
     async def _complete_turn(
         self,
