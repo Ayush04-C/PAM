@@ -33,6 +33,11 @@ literal user-written content; contextual file-selection requests are rejected.
 `/new` clears temporary context, not durable memories or OAuth grants. See
 [Stage 8](Driver/STAGE_08_REFERENCES_AND_MEMORY.md) for the exact lifecycle and tests.
 
+Stage 9 keeps raw content passages in the ephemeral tool transcript. Cited answers
+may contain quotes and retain content-sensitive provenance in transient history;
+content consent must remain valid for follow-ups. Raw passages are not stored in
+file references, document caches or Supermemory. See [Stage 9](Driver/STAGE_09_CONTENT.md).
+
 * Recall errors are swallowed so normal conversation remains available.
 * Passive-ingestion errors are swallowed after a successful answer is returned.
 * Explicit remember/forget errors return a failure message and never claim the action succeeded.
