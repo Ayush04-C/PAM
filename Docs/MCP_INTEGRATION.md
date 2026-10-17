@@ -21,7 +21,12 @@ The result is an object with `availability` (human-readable text) and `presentat
 
 `ConversationService` discovers Calendar and, with matching current consent, the two Drive metadata tools. It validates names/arguments and preserves sequential call/result transcripts. Calendar retains its two-call limit; Drive-eligible turns have six total calls with at most two Calendar calls. Tool or MCP failure produces safe errors and, where available, verified partial results.
 
-The MCP declaration marks the tools as read-only and non-destructive. No create, update, delete, authorization, download, shell, or generic network tools are offered. Drive adds only bounded filename search and metadata lookup. The separate Calendar client remains narrow; the owner-bound Drive client is explicitly composed alongside it.
+The MCP declaration marks tools as read-only and non-destructive. There are no
+write, authorization, shell or generic network tools. With
+`PAM_DRIVE_CONTENT_ENABLED=true`, `drive_get_file_content` adds bounded Google
+Docs/plain-text reads. Its server checks the content scope/read boundary; the
+conversation checks separate content-transfer consent before model delivery.
+The separate Calendar client remains narrow. See [Stage 9](Driver/STAGE_09_CONTENT.md).
 
 ## Error handling and timeouts
 
