@@ -10,12 +10,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from pam.config import Settings
-from pam.conversation.factory import create_model_provider
-from pam.conversation.mcp_client import local_client_from_server, local_drive_support
-from pam.conversation.service import ConversationService
-from pam.conversation.store import InMemoryConversationStore
-from pam.mcp.server import create_mcp_server
-from pam.memory.factory import create_memory_service
+from pam.conversation.factory import create_conversation_service
 from pam.memory.models import MemoryOwnerId
 
 
@@ -45,31 +40,20 @@ def format_status(settings: Settings) -> str:
 async def run(settings: Settings | None = None) -> None:
     """Read independent local turns until the user exits."""
     settings = settings if settings is not None else Settings()
+    tool_debugger = print if settings.conversation_debug_tool_calls else None
     try:
-        provider = create_model_provider(settings)
+        service = create_conversation_service(
+            settings,
+            on_tool_invoked=(
+                (lambda name: tool_debugger(f"tool invoked: {name}"))
+                if tool_debugger is not None
+                else None
+            ),
+        )
     except ValueError:
         print("Configure PAM_MODEL_PROVIDER and its matching API key to use the CLI.")
         return
-    tool_debugger = print if settings.conversation_debug_tool_calls else None
-    server = create_mcp_server(settings)
-    drive_mcp, consent_loader = local_drive_support(server, settings)
-    service = ConversationService(
-        provider,
-        local_client_from_server(server),
-        drive_mcp=drive_mcp,
-        drive_consent_loader=consent_loader,
-        conversation_store=InMemoryConversationStore(
-            settings.conversation_max_history_messages,
-            settings.conversation_max_sessions,
-        ),
-        memory_service=create_memory_service(settings),
-        drive_max_context_chars=settings.drive_max_context_chars,
-        on_tool_invoked=(
-            (lambda tool_name: tool_debugger(f"tool invoked: {tool_name}"))
-            if tool_debugger is not None
-            else None
-        ),
-    )
+    owner = MemoryOwnerId(settings.memory_cli_owner_id)
     while True:
         try:
             message = input("PAM > ").strip()
@@ -78,6 +62,9 @@ async def run(settings: Settings | None = None) -> None:
             return
         if message.lower() in {"exit", "quit"}:
             return
+        if message == "/help":
+            print(service.capability_help(owner))
+            continue
         if message == "/status":
             print(format_status(settings))
             continue
@@ -89,7 +76,7 @@ async def run(settings: Settings | None = None) -> None:
             await service.respond(
                 message,
                 session_id="cli:local",
-                memory_owner=MemoryOwnerId(settings.memory_cli_owner_id),
+                memory_owner=owner,
             )
         )
 
