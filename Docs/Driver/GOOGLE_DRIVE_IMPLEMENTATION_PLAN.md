@@ -1,7 +1,23 @@
 # Google Drive MCP implementation plan
 
-Status: planning proposal for architecture review; no feature implemented.
+**Architecture revision, 2026-10-17:** use the existing `pam/mcp/server.py` with
+`pam/mcp/calendar.py` and proposed `pam/mcp/driver.py`. Reuse and extend suitable
+existing helpers, including helpers in Calendar files; no separate Drive server
+or `pam/drive` package is required. The current
+[Stage 1 contract](STAGE_01_BOUNDARIES.md) takes precedence over the independent
+server/package proposals below. Adapt D3 to shared-server tool registration and
+D4 to validated tool dispatch within that server. Preserve read-only capability
+validation, consent, Calendar behavior and credential safety. The original audit
+and detailed roadmap below remain reference material; obsolete topology and
+subprocess-isolation assumptions must not be implemented as requirements.
+
+Status: staged implementation underway; Drive OAuth and tools are not implemented.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
+
+Current stage: [Stage 3 configuration and offline status](STAGE_03_CONFIGURATION.md).
+The [Stage 2 consent and LLM boundaries](STAGE_02_CONSENT.md) remain enforced.
+The [Stage 1 integration boundaries](STAGE_01_BOUNDARIES.md) remain the layout contract.
+Drive documentation now lives together in `Docs/Driver`; tests remain in `pam/tests`.
 
 Review companion added 2026-10-16: [proposed workflow and architecture diagrams](GOOGLE_DRIVE_ARCHITECTURE.md).
 These user-requested draft views do not finalize open architecture decisions or
@@ -49,19 +65,19 @@ details were checked against official documentation linked below.
 
 | Existing location | Audited responsibility |
 | --- | --- |
-| [`pam/domain`](../pam/domain/) | Calendar events, interval math, formatting, deterministic availability presentation. Calendar domain, not generic file models. |
-| [`pam/application/calendar_reader.py`](../pam/application/calendar_reader.py), [`availability_service.py`](../pam/application/availability_service.py) | `CalendarReader.read_events`, availability orchestration, inclusive date validation with a 31-day limit and Asia/Kolkata policy. |
-| [`pam/integrations/google_calendar.py`](../pam/integrations/google_calendar.py), [`google_wiring.py`](../pam/integrations/google_wiring.py) | Calendar OAuth, token refresh, paginated primary-calendar reads, event mapping, Google-mode wiring. |
-| [`pam/security/credentials.py`](../pam/security/credentials.py) | `CredentialStore.save/load` and Fernet-encrypted single refresh-token file. |
-| [`pam/api/google_oauth.py`](../pam/api/google_oauth.py), [`pam/main.py`](../pam/main.py) | Local OAuth routes, one-time state and PKCE, FastAPI factory, availability HTTP API and health. |
-| [`pam/mcp/calendar.py`](../pam/mcp/calendar.py), [`server.py`](../pam/mcp/server.py), [`config.py`](../pam/mcp/config.py) | One Calendar MCP tool, strict schema, stdio entry point, typed launch descriptor. |
-| [`pam/conversation`](../pam/conversation/) | Provider-neutral values, Calendar MCP client, bounded orchestration/history, BharatCode/Gemini providers, CLI. |
-| [`pam/memory`](../pam/memory/) | Optional durable-memory interface and Supermemory implementation. |
-| [`pam/telegram`](../pam/telegram/) | Authorized private-text adapter and outbound polling worker. |
-| [`pam/config.py`](../pam/config.py), [`pam/logging.py`](../pam/logging.py) | `PAM_` settings, conditional requirements, safe structured logging utilities. |
-| [`pam/tests`](../pam/tests/), [`examples`](../examples/) | Offline test suite and fake Calendar example; examples are excluded from graph indexing and are not structural evidence for this plan. |
-| [`Docs`](README.md), [`Architecture`](../Architecture/) | Operational guides and earlier design documentation. |
-| [`pyproject.toml`](../pyproject.toml), [`uv.lock`](../uv.lock), [CI](../.github/workflows/ci.yml) | Python >=3.12, setuptools `pam*` discovery, locked dependencies; CI format/lint/type/test gates. |
+| [`pam/domain`](../../pam/domain) | Calendar events, interval math, formatting, deterministic availability presentation. Calendar domain, not generic file models. |
+| [`pam/application/calendar_reader.py`](../../pam/application/calendar_reader.py), [`availability_service.py`](../../pam/application/availability_service.py) | `CalendarReader.read_events`, availability orchestration, inclusive date validation with a 31-day limit and Asia/Kolkata policy. |
+| [`pam/integrations/google_calendar.py`](../../pam/integrations/google_calendar.py), [`google_wiring.py`](../../pam/integrations/google_wiring.py) | Calendar OAuth, token refresh, paginated primary-calendar reads, event mapping, Google-mode wiring. |
+| [`pam/security/credentials.py`](../../pam/security/credentials.py) | `CredentialStore.save/load` and Fernet-encrypted single refresh-token file. |
+| [`pam/api/google_oauth.py`](../../pam/api/google_oauth.py), [`pam/main.py`](../../pam/main.py) | Local OAuth routes, one-time state and PKCE, FastAPI factory, availability HTTP API and health. |
+| [`pam/mcp/calendar.py`](../../pam/mcp/calendar.py), [`server.py`](../../pam/mcp/server.py), [`config.py`](../../pam/mcp/config.py) | One Calendar MCP tool, strict schema, stdio entry point, typed launch descriptor. |
+| [`pam/conversation`](../../pam/conversation) | Provider-neutral values, Calendar MCP client, bounded orchestration/history, BharatCode/Gemini providers, CLI. |
+| [`pam/memory`](../../pam/memory) | Optional durable-memory interface and Supermemory implementation. |
+| [`pam/telegram`](../../pam/telegram) | Authorized private-text adapter and outbound polling worker. |
+| [`pam/config.py`](../../pam/config.py), [`pam/logging.py`](../../pam/logging.py) | `PAM_` settings, conditional requirements, safe structured logging utilities. |
+| [`pam/tests`](../../pam/tests), [`examples`](../../examples) | Offline test suite and fake Calendar example; examples are excluded from graph indexing and are not structural evidence for this plan. |
+| [`Docs`](../README.md), [`Architecture`](../../Architecture) | Operational guides and earlier design documentation. |
+| [`pyproject.toml`](../../pyproject.toml), [`uv.lock`](../../uv.lock), [CI](../../.github/workflows/ci.yml) | Python >=3.12, setuptools `pam*` discovery, locked dependencies; CI format/lint/type/test gates. |
 
 ### Calendar MCP contract and actual client wiring
 
@@ -87,7 +103,7 @@ Important source/documentation discrepancy: the CLI's `run` and Telegram's
 object, rather than the stdio launch descriptor. The SDK owns that object's
 transport behavior. The standalone stdio entry point and launch descriptor exist
 and have a subprocess test, but the audit does not establish that normal CLI/bot
-wiring launches a child process. The current [MCP guide](MCP_INTEGRATION.md)
+wiring launches a child process. The current [MCP guide](../MCP_INTEGRATION.md)
 describes stdio startup more broadly than this wiring supports. D4 must explicitly
 choose/test transport and D4 documentation must correct this distinction.
 
@@ -100,7 +116,7 @@ It recalls owner-scoped memory, builds a model turn with current time/history,
 and commits successful user/assistant messages to `ConversationStore`.
 
 `ToolDefinition`, `ToolCall`, `ToolResult`, and `ModelTurn` in
-[`models.py`](../pam/conversation/models.py) are largely provider-neutral;
+[`models.py`](../../pam/conversation/models.py) are largely provider-neutral;
 `ToolDefinition` has no server identity. `ModelDecision` represents one text
 answer or one tool request. BharatCode sends OpenAI-compatible function schemas
 with `tool_choice="auto"`, parses only the first returned tool call, requires its
@@ -168,24 +184,24 @@ another unbounded cache or assume history LRU evicts all service state.
 
 ### Existing tests, documentation, and startup
 
-Audited test files include [Google Calendar](../pam/tests/test_google_calendar.py)
+Audited test files include [Google Calendar](../../pam/tests/test_google_calendar.py)
 (exact scope, encryption, state, pagination, refresh/revocation),
-[Calendar MCP](../pam/tests/test_mcp_calendar.py) (schemas, no writes, errors,
+[Calendar MCP](../../pam/tests/test_mcp_calendar.py) (schemas, no writes, errors,
 injected SDK client, stdio subprocess, deterministic presentation),
-[conversation](../pam/tests/test_conversation.py) (allowlist, tool loops,
-untrusted results, offline MCP), [history](../pam/tests/test_conversation_history.py)
-(bounded isolation, follow-ups, `/new`), [BharatCode](../pam/tests/test_bharatcode.py)
-(call IDs, schemas, history, failure mapping), [memory](../pam/tests/test_memory.py)
+[conversation](../../pam/tests/test_conversation.py) (allowlist, tool loops,
+untrusted results, offline MCP), [history](../../pam/tests/test_conversation_history.py)
+(bounded isolation, follow-ups, `/new`), [BharatCode](../../pam/tests/test_bharatcode.py)
+(call IDs, schemas, history, failure mapping), [memory](../../pam/tests/test_memory.py)
 (owner scope, ingestion, explicit actions, tool-turn exclusion), and
-[Telegram](../pam/tests/test_telegram.py) (private authorization, chunking,
-ownership, offline integration). [Config](../pam/tests/test_config.py),
-[prompt](../pam/tests/test_system_prompt.py), and
-[domain](../pam/tests/test_domain_availability.py) tests are regression gates.
+[Telegram](../../pam/tests/test_telegram.py) (private authorization, chunking,
+ownership, offline integration). [Config](../../pam/tests/test_config.py),
+[prompt](../../pam/tests/test_system_prompt.py), and
+[domain](../../pam/tests/test_domain_availability.py) tests are regression gates.
 
 Existing entry points: `python -m pam.conversation.cli`,
 `python -m pam.telegram.bot`, `python -m pam.mcp.server`, and the FastAPI
 `pam.main:app` factory/application. The bot builds dependencies once and runs
-long polling. [Production deployment](PRODUCTION_DEPLOYMENT.md) records Azure
+long polling. [Production deployment](../PRODUCTION_DEPLOYMENT.md) records Azure
 Ubuntu 24.04, Python 3.12/uv, one PM2 `pam-telegram` worker restored by systemd,
 and 1 GiB swap. No permanent FastAPI/Nginx/public listener is required for polling.
 The tracked inventory contains CI but no checked-in PM2 ecosystem file; startup
@@ -988,12 +1004,12 @@ These are implementation gates, not gaps hidden behind a claim of readiness.
 
 ## 12. Documentation update map
 
-During this task: create this plan and add one link to [Docs index](README.md).
-Later approved implementation stages should update [Architecture](ARCHITECTURE.md),
-[MCP integration](MCP_INTEGRATION.md), [Conversation and models](CONVERSATION_AND_MODELS.md),
-[Calendar integration](GOOGLE_CALENDAR_INTEGRATION.md),
-[Memory integration](MEMORY_INTEGRATION.md), [Telegram integration](TELEGRAM_INTEGRATION.md),
-[Production deployment](PRODUCTION_DEPLOYMENT.md),
-[Testing and operations](TESTING_AND_OPERATIONS.md), and [Roadmap](ROADMAP.md),
+During this task: create this plan and add one link to [Docs index](../README.md).
+Later approved implementation stages should update [Architecture](../ARCHITECTURE.md),
+[MCP integration](../MCP_INTEGRATION.md), [Conversation and models](../CONVERSATION_AND_MODELS.md),
+[Calendar integration](../GOOGLE_CALENDAR_INTEGRATION.md),
+[Memory integration](../MEMORY_INTEGRATION.md), [Telegram integration](../TELEGRAM_INTEGRATION.md),
+[Production deployment](../PRODUCTION_DEPLOYMENT.md),
+[Testing and operations](../TESTING_AND_OPERATIONS.md), and [Roadmap](../ROADMAP.md),
 plus a focused Drive guide and safe configuration-name reference. D0 approval
 precedes any final architecture diagram; that diagram remains separate work.

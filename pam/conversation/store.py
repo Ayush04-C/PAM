@@ -6,7 +6,7 @@ import asyncio
 from collections import OrderedDict
 from typing import Protocol
 
-from pam.conversation.models import ConversationMessage
+from pam.conversation.models import ConversationMessage, DriveBoundary
 
 
 class ConversationStore(Protocol):
@@ -16,7 +16,12 @@ class ConversationStore(Protocol):
         """Load portable history for one session."""
 
     async def commit_turn(
-        self, session_id: str, user_message: str, assistant_message: str
+        self,
+        session_id: str,
+        user_message: str,
+        assistant_message: str,
+        *,
+        drive_boundary: DriveBoundary | None = None,
     ) -> None:
         """Atomically append one successful user and assistant exchange."""
 
@@ -47,12 +52,17 @@ class InMemoryConversationStore:
             return history
 
     async def commit_turn(
-        self, session_id: str, user_message: str, assistant_message: str
+        self,
+        session_id: str,
+        user_message: str,
+        assistant_message: str,
+        *,
+        drive_boundary: DriveBoundary | None = None,
     ) -> None:
         async with self._lock:
             history = self._sessions.get(session_id, ()) + (
-                ConversationMessage("user", user_message),
-                ConversationMessage("assistant", assistant_message),
+                ConversationMessage("user", user_message, drive_boundary),
+                ConversationMessage("assistant", assistant_message, drive_boundary),
             )
             self._sessions[session_id] = history[-self._max_history_messages :]
             self._sessions.move_to_end(session_id)

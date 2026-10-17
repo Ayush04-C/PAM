@@ -55,6 +55,7 @@ def build_conversation_service(settings: Settings) -> ConversationService:
             settings.conversation_max_sessions,
         ),
         memory_service=create_memory_service(settings),
+        drive_max_context_chars=settings.drive_max_context_chars,
         on_tool_invoked=(
             lambda tool_name: (
                 logger.info("tool invoked", extra={"tool_name": tool_name})
