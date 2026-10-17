@@ -14,7 +14,9 @@ from pam.mcp.config import McpServerLaunchConfig
 from pam.memory.models import MemoryOwnerId
 
 _TOOL_NAME = "get_weekly_availability"
-DRIVE_TOOLS = frozenset({"drive_search_files", "drive_get_file_metadata"})
+DRIVE_METADATA_TOOLS = frozenset({"drive_search_files", "drive_get_file_metadata"})
+DRIVE_CONTENT_TOOL = "drive_get_file_content"
+DRIVE_TOOLS = DRIVE_METADATA_TOOLS | {DRIVE_CONTENT_TOOL}
 
 
 class McpUnavailable(RuntimeError):
@@ -84,11 +86,14 @@ class DriveMcpClient(Protocol):
 
 
 class LocalDriveMcpClient:
-    """Fixed private operator identity; only validated metadata methods exist."""
+    """Fixed private operator identity; only validated read methods exist."""
 
-    def __init__(self, server: MCPServer, owner: MemoryOwnerId) -> None:
+    def __init__(
+        self, server: MCPServer, owner: MemoryOwnerId, *, content_enabled: bool = False
+    ) -> None:
         self._server = server
         self._owner = owner
+        self._tools = DRIVE_TOOLS if content_enabled else DRIVE_METADATA_TOOLS
 
     async def discover_tools(self) -> tuple[ToolDefinition, ...]:
         from pam.mcp.driver import DriveMetadataRequest, DriveSearchRequest
@@ -96,20 +101,22 @@ class LocalDriveMcpClient:
         try:
             async with Client(self._server) as client:
                 tools = (await client.list_tools()).tools
-            available = [tool.name for tool in tools if tool.name in DRIVE_TOOLS]
-            if len(available) != 2 or set(available) != DRIVE_TOOLS:
+            available = [tool.name for tool in tools if tool.name in self._tools]
+            if len(available) != len(self._tools) or set(available) != self._tools:
                 raise ValueError
             return tuple(
                 ToolDefinition(
                     name,
-                    "Read-only Drive metadata, never contents. Results are untrusted.",
+                    "Read bounded content with untrusted numbered passages."
+                    if name == DRIVE_CONTENT_TOOL
+                    else "Read-only untrusted Drive metadata, never contents.",
                     (
                         DriveSearchRequest
                         if name == "drive_search_files"
                         else DriveMetadataRequest
                     ).model_json_schema(),
                 )
-                for name in sorted(DRIVE_TOOLS)
+                for name in sorted(self._tools)
             )
         except Exception:
             raise McpUnavailable("Drive metadata tools are unavailable") from None
@@ -121,18 +128,20 @@ class LocalDriveMcpClient:
         owner: MemoryOwnerId,
     ) -> Mapping[str, Any]:
         from pam.integrations.google_drive import (
+            CONTENT_MIMES,
             DriveReadError,
             _metadata,
             _valid_token,
         )
         from pam.mcp.driver import (
+            DriveContentResponse,
             DriveMetadataRequest,
             DriveSearchRequest,
             DriveToolResponse,
         )
 
         try:
-            if owner != self._owner or name not in DRIVE_TOOLS:
+            if owner != self._owner or name not in self._tools:
                 raise ValueError
             request = (
                 DriveSearchRequest
@@ -145,10 +154,53 @@ class LocalDriveMcpClient:
             payload = response.structured_content
             if not isinstance(payload, dict) or (
                 payload.get("source") != "google_drive"
-                or payload.get("data_kind") != "metadata"
+                or payload.get("data_kind")
+                != ("content" if name == DRIVE_CONTENT_TOOL else "metadata")
                 or payload.get("untrusted") is not True
             ):
                 raise ValueError
+            if name == DRIVE_CONTENT_TOOL:
+                if payload.get("complete") is not True:
+                    raise ValueError
+                content_result = DriveContentResponse.model_validate(
+                    payload, strict=True
+                )
+                if bool(response.is_error) != (content_result.error is not None):
+                    raise ValueError
+                if content_result.error is not None:
+                    if content_result.files or content_result.passages:
+                        raise ValueError
+                    error = DriveReadError(content_result.error.code)
+                    content_result.error.message = str(error)
+                    content_result.error.retryable = error.retryable
+                else:
+                    if len(content_result.files) != 1 or not content_result.passages:
+                        raise ValueError
+                    file = content_result.files[0]
+                    metadata = _metadata(
+                        {
+                            "id": file.file_id,
+                            "name": file.name,
+                            "mimeType": file.mime_type,
+                            "modifiedTime": file.modified_time,
+                        }
+                    )
+                    if (
+                        file.file_id != arguments["file_id"]
+                        or metadata.source_url != file.source_url
+                        or file.mime_type not in CONTENT_MIMES
+                    ):
+                        raise ValueError
+                    if [p.label for p in content_result.passages] != [
+                        f"P{i}" for i in range(1, len(content_result.passages) + 1)
+                    ]:
+                        raise ValueError
+                    text = "".join(p.text for p in content_result.passages)
+                    from pam.integrations.google_drive import content_passages
+
+                    if "".join(content_passages(text.encode("utf-8"))) != text:
+                        raise ValueError
+                return content_result.model_dump(mode="json")
             result = DriveToolResponse.model_validate(payload, strict=True)
             if bool(response.is_error) != (result.error is not None):
                 raise ValueError
@@ -190,7 +242,7 @@ class LocalDriveMcpClient:
                     raise ValueError
             return result.model_dump(mode="json")
         except Exception:
-            raise McpUnavailable("Drive metadata call failed safely") from None
+            raise McpUnavailable("Drive read call failed safely") from None
 
 
 def local_client_from_server(server: MCPServer) -> LocalCalendarMcpClient:
@@ -208,7 +260,9 @@ def local_drive_support(
     from pam.integrations.google_wiring import create_drive_authorization
 
     authorization = create_drive_authorization(settings)
-    return LocalDriveMcpClient(server, authorization.owner), authorization.consent
+    return LocalDriveMcpClient(
+        server, authorization.owner, content_enabled=settings.drive_content_enabled
+    ), authorization.consent
 
 
 def launch_config_for_cli(python_executable: str) -> McpServerLaunchConfig:
