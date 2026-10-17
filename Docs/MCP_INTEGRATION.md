@@ -6,7 +6,7 @@ PAM embeds a private shared Model Context Protocol server, launched as `python -
 
 ## Exposed tool
 
-The Calendar capability exposes `get_weekly_availability`. The shared server also exposes `drive_search_files` and `drive_get_file_metadata` when `PAM_DRIVE_ENABLED=true`; the current conversation client still allows only Calendar. This section describes the Calendar contract.
+The Calendar capability exposes `get_weekly_availability`. The shared server also exposes `drive_search_files` and `drive_get_file_metadata` when `PAM_DRIVE_ENABLED=true`. Stage 7's separate Drive conversation client offers those tools only after current owner/read/metadata-transfer/destination checks. This section describes the Calendar contract; see [Stage 7 routing](Driver/STAGE_07_ROUTING.md) for combined operation.
 
 | Input | Required | Rules |
 | --- | --- | --- |
@@ -19,9 +19,9 @@ The result is an object with `availability` (human-readable text) and `presentat
 
 ## Client orchestration and restrictions
 
-`ConversationService` discovers available tools for the model turn. A model tool request is accepted only when its name is exactly `get_weekly_availability`; every other name receives the read-only refusal. The loop allows at most two tool rounds. Tool or MCP failure produces a safe assistant-facing failure rather than an internal exception.
+`ConversationService` discovers Calendar and, with matching current consent, the two Drive metadata tools. It validates names/arguments and preserves sequential call/result transcripts. Calendar retains its two-call limit; Drive-eligible turns have six total calls with at most two Calendar calls. Tool or MCP failure produces safe errors and, where available, verified partial results.
 
-The MCP declaration marks the tools as read-only and non-destructive. No create, update, delete, authorization, download, shell, or generic network tools are offered. Drive adds only bounded filename search and metadata lookup. The conversation allowlist remains Calendar-only until later routing work.
+The MCP declaration marks the tools as read-only and non-destructive. No create, update, delete, authorization, download, shell, or generic network tools are offered. Drive adds only bounded filename search and metadata lookup. The separate Calendar client remains narrow; the owner-bound Drive client is explicitly composed alongside it.
 
 ## Error handling and timeouts
 
