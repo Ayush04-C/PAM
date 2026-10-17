@@ -4,35 +4,44 @@ Drive development stays in this folder. Start with the
 [implementation plan](GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) and
 [workflow diagrams](GOOGLE_DRIVE_ARCHITECTURE.md). This stage defines separation
 and adds offline import checks; it does not enable Drive or change runtime code.
+The revised design below supersedes the earlier independent-server proposal.
 
 ## Ownership
 
 | Area | Owns | Boundary |
 | --- | --- | --- |
-| Existing Calendar | `pam/domain`, `pam/application`, Calendar integration/wiring and `pam/mcp/calendar.py`, `server.py` | No dependency on `pam.drive`. Keep availability math, validation and presentation here. |
-| Proposed Drive | `pam/drive` with its own `mcp/server.py` | File models, API reads and strict Drive tools. No Calendar, conversation/model-provider, Telegram or memory imports. |
-| Shared infrastructure | `pam/config.py`, `pam/logging.py`, `pam/security`; future extracted `pam/integrations/google_oauth.py` | No Calendar or Drive domain dependencies. Reuse mechanics, not domain policy. |
-| Conversation/composition | `pam/conversation`, CLI and Telegram composition | May construct both capabilities. Later routing validates model-proposed tool calls and combines results. |
+| Calendar | Existing `pam/mcp/calendar.py` and Calendar services | Keep availability math, validation, tool schema and deterministic presentation intact. |
+| Drive | Proposed `pam/mcp/driver.py` | Define validated read-only Drive tools, reusing existing suitable functions. Add a Drive API adapter only where new behavior is needed. |
+| Shared MCP server | Existing `pam/mcp/server.py` | Register Calendar and optionally Drive tools in one server and entry point. Calendar must still work when Drive is disabled or its setup fails. |
+| Shared infrastructure | Existing settings, logging, encryption, Google and MCP helpers | Extend or import existing code where its semantics fit; extract a helper only when necessary. No forced parallel infrastructure. |
+| Conversation/composition | Existing `pam/conversation`, CLI and Telegram composition | Later dispatch approved tool names and combine results. MCP adapters do not call providers, Telegram or durable memory themselves. |
 
-Keep one repository and one installed PAM package. Calendar retains the entry
-point `python -m pam.mcp.server` and the single `get_weekly_availability` tool.
-Its structured response remains `availability` plus deterministic `presentation`.
-Drive will have `python -m pam.drive.mcp.server` and `drive_` tool names when its
-server stage is implemented. No Drive package or empty scaffolding is added now.
+Keep one repository, one MCP server and the entry point `python -m pam.mcp.server`.
+Today it exposes only `get_weekly_availability`; a later stage adds `drive_` tools
+from `pam/mcp/driver.py`. The Calendar response remains `availability` plus
+deterministic `presentation`. No separate `pam/drive` package, server process or
+empty scaffolding is needed. `driver.py` and server registration are future runtime
+work, not part of this Stage 1 revision.
 
 Reusable now: encryption/store mechanics, settings/logging infrastructure,
 provider-neutral tool values and the typed MCP launch descriptor. The existing
 Calendar OAuth client hardcodes scopes, and the Calendar MCP client validates an
-availability response: neither is a generic Drive client. Scope-aware OAuth
-extraction, separate credential paths and multi-MCP routing belong to later stages.
-Drive must never overwrite Calendar credentials. Combined requests will go through
-the shared orchestrator, not directly between the two capability packages.
+availability response: verify and adapt those semantics before reusing them for
+Drive. Existing Calendar files may host reusable helpers; imports between feature
+files are allowed when useful. Avoid duplicate implementations and import cycles.
+Shared code does not mean sharing Calendar scopes or overwriting its credentials.
+Combined requests use the existing orchestrator with validated tool dispatch in a
+later stage, not a second server registry. Tool failures should remain specific
+to their capability; an outage of the shared MCP transport can affect both.
 
 ## Tests and error handling
 
 [`test_integration_boundaries.py`](../../pam/tests/test_integration_boundaries.py)
-checks ordinary Python imports in the real source tree. It rejects Calendar →
-Drive, Drive → Calendar/model/transport/memory, and shared → domain dependencies.
+checks ordinary Python imports in the real source tree. It rejects MCP adapters →
+conversation/model-provider, Telegram or memory, and Calendar domain → MCP adapters.
+It explicitly allows the shared server to import both adapters and allows Drive
+to reuse existing Calendar-file helpers. Whether a helper's behavior is suitable
+must be reviewed and tested at the reuse site; file location alone is not a ban.
 Fixtures cover direct, aliased, parent-package and relative imports, allowed
 reuse/composition, and invalid syntax. Violations report file, line and imported
 module; read/parse errors fail the check rather than silently skipping source.
@@ -59,7 +68,7 @@ git diff --check
 
 ## Risks and completion gate
 
-- Calendar coupling: checked by import guards and existing Calendar regressions.
+- Adapter/domain coupling: checked by import guards and existing Calendar regressions.
 - Scope/credential disruption: no OAuth, settings or credential changes in Stage 1.
 - Production resource impact: no runtime code, services, dependencies or deployment changes.
 - Secret exposure: tests are offline; do not read real credential files or log payloads.
@@ -71,9 +80,9 @@ checks, documentation links and whitespace checks pass. Record actual outcomes
 in the stage handoff; a blocked check is not a passing gate. No production rollout
 is part of this stage.
 
-Validation on 2026-10-17: 165 tests passed, including 22 boundary checks;
-format/lint/type checks, 91 local documentation links/anchors and whitespace
-checks passed. Existing async tests required running outside the Windows sandbox
+Validation on 2026-10-17: 159 tests passed, including 16 revised boundary checks;
+format, lint, type and whitespace checks passed.
+Existing async tests require running outside the Windows sandbox
 because its loopback socket restriction stalled event-loop setup. No tests were
 skipped or application code changed to work around that restriction.
 
