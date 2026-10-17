@@ -8,20 +8,27 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from pydantic import ValidationError
+from pydantic_settings import SettingsError
 
 from pam.api.audit import AuditSink, InMemoryAuditSink
 from pam.api.availability import create_availability_router
+from pam.api.drive_oauth import create_drive_oauth_router
 from pam.api.google_oauth import InMemoryOAuthStateStore, create_google_oauth_router
 from pam.application import AvailabilityService
 from pam.application.local_calendar import create_local_availability_service
 from pam.config import Settings
-from pam.integrations.google_calendar import GoogleOAuthClient
+from pam.conversation.factory import configured_model_destination
+from pam.integrations.drive_auth import DriveAuthorization
+from pam.integrations.google_calendar import GoogleOAuthClient, GoogleOAuthConfig
 from pam.integrations.google_wiring import (
     create_google_availability_service,
     credential_store,
     google_oauth_config,
 )
 from pam.logging import configure_logging, request_id_context
+from pam.memory.models import MemoryOwnerId
+from pam.security.credentials import EncryptedFileCredentialStore
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -35,7 +42,10 @@ def create_app(
     configure_logging()
     app = FastAPI(title="PAM", version="0.1.0")
     logger = logging.getLogger("pam.http")
-    active_settings = settings or Settings()
+    try:
+        active_settings = settings or Settings()
+    except (ValidationError, SettingsError, OSError):
+        raise RuntimeError("Invalid PAM configuration. Check your settings.") from None
     if availability_service is not None:
         service = availability_service
     elif active_settings.calendar_backend == "google":
@@ -52,6 +62,9 @@ def create_app(
         token = request_id_context.set(request_id)
         try:
             response = await call_next(request)
+            if request.url.path.startswith("/oauth/google/drive/"):
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Referrer-Policy"] = "no-referrer"
             response.headers[REQUEST_ID_HEADER] = request_id
             logger.info(
                 "request completed", extra={"status_code": response.status_code}
@@ -74,6 +87,32 @@ def create_app(
     app.include_router(
         create_google_oauth_router(oauth_client, InMemoryOAuthStateStore(), oauth_store)
     )
+    if active_settings.drive_enabled:
+        assert active_settings.drive_google_client_id is not None
+        assert active_settings.drive_google_client_secret is not None
+        assert active_settings.drive_google_account_email is not None
+        assert active_settings.drive_owner_id is not None
+        assert active_settings.credential_encryption_key is not None
+        assert active_settings.app_secret is not None
+        authorization = DriveAuthorization(
+            GoogleOAuthConfig(
+                active_settings.drive_google_client_id,
+                active_settings.drive_google_client_secret.get_secret_value(),
+                active_settings.drive_google_redirect_uri,
+            ),
+            EncryptedFileCredentialStore(
+                active_settings.drive_credential_storage_path,
+                active_settings.credential_encryption_key.get_secret_value(),
+            ),
+            owner=MemoryOwnerId(active_settings.drive_owner_id),
+            account_email=active_settings.drive_google_account_email,
+            model_destination=configured_model_destination(active_settings),
+        )
+        app.include_router(
+            create_drive_oauth_router(
+                authorization, active_settings.app_secret.get_secret_value()
+            )
+        )
 
     return app
 
