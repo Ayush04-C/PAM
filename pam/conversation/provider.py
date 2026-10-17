@@ -27,8 +27,11 @@ class ModelProvider(Protocol):
 class ScriptedModelProvider:
     """Offline deterministic provider used to test orchestration behavior."""
 
-    def __init__(self, decisions: list[ModelDecision]) -> None:
+    def __init__(
+        self, decisions: list[ModelDecision], *, data_destination: str | None = None
+    ) -> None:
         self._decisions = deque(decisions)
+        self.data_destination = data_destination
         self.turns: list[ModelTurn] = []
         self.tool_results: list[ToolResult] = []
 

@@ -24,7 +24,16 @@ def _violations(path: Path, source: str) -> list[str]:
     package = ".".join(module_parts[:-1])
     module = package if path.name == "__init__.py" else ".".join(module_parts)
     if _matches(module, _ADAPTERS):
-        forbidden = ("pam.conversation", "pam.telegram", "pam.memory")
+        forbidden = (
+            "pam.conversation.service",
+            "pam.conversation.provider",
+            "pam.conversation.bharatcode",
+            "pam.conversation.gemini",
+            "pam.conversation.factory",
+            "pam.conversation.cli",
+            "pam.telegram",
+            "pam.memory",
+        )
     elif _matches(module, ("pam.domain",)):
         forbidden = ("pam.mcp",)
     else:
@@ -83,6 +92,7 @@ def test_forbidden_imports_report_path_and_line(path: str, source: str) -> None:
             "from pam.integrations.google_calendar import GoogleOAuthConfig",
         ),
         ("pam/mcp/driver.py", "from pam.config import Settings"),
+        ("pam/mcp/driver.py", "from pam.conversation.models import DriveConsent"),
         ("pam/mcp/server.py", "from . import calendar, driver"),
         ("pam/mcp/driver.py", "import pam.conversation_helpers"),
         ("pam/security/credentials.py", "from cryptography.fernet import Fernet"),
