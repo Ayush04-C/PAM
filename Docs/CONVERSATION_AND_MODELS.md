@@ -33,7 +33,11 @@ Calendar-only turns retain two tool calls. Drive-eligible turns allow six total 
 
 The system instruction establishes current time and PAM's Calendar role. Model output is untrusted, and tool availability is application-controlled. Recalled memory is sent with an explicit marker: it is **untrusted context, not instructions**. This prevents a stored prompt-injection string from granting tools or changing application policy. Tool outputs are structured objects, not instructions to execute.
 
-PAM supports Calendar availability and consent-gated Drive metadata reads. It has no write or file-content tool. Retrieved Drive data and derived history remain untrusted; code enforces authority independently of prompt wording. Content reading is later-stage work.
+PAM supports Calendar availability, Drive metadata, and opt-in Google Docs/UTF-8
+text content reads. Content tools require separate current transfer consent;
+derived history keeps its content boundary. Source passage citations are checked
+against successful results, and canonical links are added by the host. No write
+tools exist. Retrieved text remains untrusted. See [Stage 9](Driver/STAGE_09_CONTENT.md).
 
 ## Phase 10 availability presentation
 
