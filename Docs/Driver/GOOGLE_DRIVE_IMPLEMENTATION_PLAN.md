@@ -3,6 +3,9 @@
 Status: planning proposal for architecture review; no feature implemented.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
+Current stage: [Stage 1 integration boundaries](STAGE_01_BOUNDARIES.md).
+Drive documentation now lives together in `Docs/Driver`; tests remain in `pam/tests`.
+
 Review companion added 2026-10-16: [proposed workflow and architecture diagrams](GOOGLE_DRIVE_ARCHITECTURE.md).
 These user-requested draft views do not finalize open architecture decisions or
 authorize implementation. The original audit below remains dated 2026-10-10.

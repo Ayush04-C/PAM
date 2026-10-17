@@ -35,6 +35,7 @@ environment.
 | Azure/PM2 deployment | [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) |
 | Verification and incident runbooks | [TESTING_AND_OPERATIONS.md](TESTING_AND_OPERATIONS.md) |
 | Proposed future phases | [ROADMAP.md](ROADMAP.md) |
+| Drive Stage 1 boundaries and tests | [Driver/STAGE_01_BOUNDARIES.md](Driver/STAGE_01_BOUNDARIES.md) |
 | Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](Driver/GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
 | Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](Driver/GOOGLE_DRIVE_ARCHITECTURE.md) |
 | Availability presentation contract | [AVAILABILITY_PRESENTATION.md](AVAILABILITY_PRESENTATION.md) |
