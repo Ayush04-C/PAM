@@ -11,10 +11,11 @@ validation, consent, Calendar behavior and credential safety. The original audit
 and detailed roadmap below remain reference material; obsolete topology and
 subprocess-isolation assumptions must not be implemented as requirements.
 
-Status: planning proposal for architecture review; no feature implemented.
+Status: staged implementation underway; Drive OAuth and tools are not implemented.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
-Current stage: [Stage 2 consent and LLM boundaries](STAGE_02_CONSENT.md).
+Current stage: [Stage 3 configuration and offline status](STAGE_03_CONFIGURATION.md).
+The [Stage 2 consent and LLM boundaries](STAGE_02_CONSENT.md) remain enforced.
 The [Stage 1 integration boundaries](STAGE_01_BOUNDARIES.md) remain the layout contract.
 Drive documentation now lives together in `Docs/Driver`; tests remain in `pam/tests`.
 
