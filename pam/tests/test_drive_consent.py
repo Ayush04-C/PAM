@@ -45,6 +45,61 @@ class DiscoverySpy(NoCalendar):
         return ()
 
 
+@pytest.mark.parametrize("message", ["Summarize", "remember this document"])
+@pytest.mark.asyncio
+async def test_configured_context_limit_denies_before_any_side_effect(message):
+    provider = ScriptedModelProvider(
+        [ModelDecision(text="unexpected")], data_destination=DESTINATION
+    )
+    memory = MemorySpy()
+    client = DiscoverySpy()
+    store = InMemoryConversationStore()
+    service = ConversationService(
+        provider,
+        client,
+        memory_service=memory,
+        conversation_store=store,
+        drive_max_context_chars=len(CONTEXT.text) - 1,
+    )
+    answer = await service.respond(
+        message, memory_owner=OWNER, drive_context=CONTEXT, drive_consent=CONSENT
+    )
+    assert "configured limit" in answer
+    assert CONTEXT.text not in answer
+    assert provider.turns == []
+    assert not client.discovered
+    assert memory.queries == memory.ingested == memory.remembered == []
+    assert await store.load("default") == ()
+
+
+@pytest.mark.asyncio
+async def test_configured_context_limit_accepts_exact_boundary_with_consent():
+    provider = ScriptedModelProvider(
+        [ModelDecision(text="Summary")], data_destination=DESTINATION
+    )
+    service = ConversationService(
+        provider, NoCalendar(), drive_max_context_chars=len(CONTEXT.text)
+    )
+    assert (
+        await service.respond(
+            "Summarize",
+            memory_owner=OWNER,
+            drive_context=CONTEXT,
+            drive_consent=CONSENT,
+        )
+        == "Summary"
+    )
+    assert provider.turns[0].drive_context == CONTEXT
+
+
+@pytest.mark.parametrize("limit", [0, 20_001])
+def test_service_rejects_limits_outside_hard_ceiling(limit):
+    with pytest.raises(ValueError, match="Drive context limit"):
+        ConversationService(
+            ScriptedModelProvider([]), NoCalendar(), drive_max_context_chars=limit
+        )
+
+
 @pytest.mark.parametrize(
     "consent",
     [

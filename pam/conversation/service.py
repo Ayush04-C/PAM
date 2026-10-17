@@ -50,7 +50,11 @@ class ConversationService:
         on_tool_invoked: Callable[[str], None] | None = None,
         conversation_store: ConversationStore | None = None,
         memory_service: MemoryService | None = None,
+        drive_max_context_chars: int = 20_000,
     ) -> None:
+        if not 1 <= drive_max_context_chars <= 20_000:
+            raise ValueError("Drive context limit must be between 1 and 20000")
+        self._drive_max_context_chars = drive_max_context_chars
         self._provider = provider
         self._calendar_mcp = calendar_mcp
         self._clock = clock or (lambda: datetime.now(DISPLAY_TIMEZONE))
@@ -73,6 +77,11 @@ class ConversationService:
         """Return a safe text answer without exposing provider or MCP internals."""
         if not user_message.strip():
             return "Please ask a Calendar availability question."
+        if (
+            drive_context is not None
+            and len(drive_context.text) > self._drive_max_context_chars
+        ):
+            return "Drive context exceeds the configured limit. Supply less text."
         lock = self._session_locks.setdefault(session_id, asyncio.Lock())
         async with lock:
             owner = memory_owner or MemoryOwnerId(f"session:{session_id}")
