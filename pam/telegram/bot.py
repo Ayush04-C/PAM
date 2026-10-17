@@ -21,7 +21,7 @@ from telegram.ext import (
 
 from pam.config import Settings
 from pam.conversation.factory import create_model_provider
-from pam.conversation.mcp_client import local_client_from_server
+from pam.conversation.mcp_client import local_client_from_server, local_drive_support
 from pam.conversation.service import ConversationService
 from pam.conversation.store import InMemoryConversationStore
 from pam.logging import configure_logging
@@ -47,9 +47,13 @@ type TelegramApplication = Application[
 def build_conversation_service(settings: Settings) -> ConversationService:
     """Build application-lifetime conversation dependencies once for polling."""
     provider = create_model_provider(settings)
+    server = create_mcp_server(settings)
+    drive_mcp, consent_loader = local_drive_support(server, settings)
     return ConversationService(
         provider,
-        local_client_from_server(create_mcp_server(settings)),
+        local_client_from_server(server),
+        drive_mcp=drive_mcp,
+        drive_consent_loader=consent_loader,
         conversation_store=InMemoryConversationStore(
             settings.conversation_max_history_messages,
             settings.conversation_max_sessions,
