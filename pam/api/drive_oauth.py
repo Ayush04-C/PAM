@@ -17,11 +17,12 @@ from pam.integrations.drive_auth import DriveAuthorization, DriveAuthorizationEr
 
 
 class PermissionRequest(BaseModel):
-    """Explicit metadata-only policy; reject unknown or coerced permissions."""
+    """Explicit transfer policy; reject unknown or coerced permissions."""
 
     model_config = ConfigDict(extra="forbid")
     allow_read: StrictBool
     allow_metadata_transfer: StrictBool
+    allow_content_transfer: StrictBool = False
     confirmed_destination: str | None = None
 
 
@@ -111,7 +112,7 @@ def create_drive_oauth_router(
                 "credential": "stored; live connectivity not checked",
                 "allow_read": consent.allow_read,
                 "allow_metadata_transfer": consent.allow_metadata_transfer,
-                "allow_content_transfer": False,
+                "allow_content_transfer": consent.allow_content_transfer,
                 "model_destination": authorization.model_destination,
             }
 
@@ -136,7 +137,12 @@ def create_drive_oauth_router(
         await run_in_threadpool(
             safe, lambda: authorization.set_permissions(**values.model_dump())
         )
-        return {"status": "permissions updated", "content_transfer": "disabled"}
+        return {
+            "status": "permissions updated",
+            "content_transfer": "enabled"
+            if values.allow_content_transfer
+            else "disabled",
+        }
 
     @router.post("/disconnect", dependencies=[Depends(operator)])
     def disconnect() -> dict[str, str]:
