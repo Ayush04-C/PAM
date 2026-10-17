@@ -39,6 +39,7 @@ environment.
 | Drive Stage 2 consent and LLM boundaries | [Driver/STAGE_02_CONSENT.md](Driver/STAGE_02_CONSENT.md) |
 | Drive Stage 3 configuration and offline status | [Driver/STAGE_03_CONFIGURATION.md](Driver/STAGE_03_CONFIGURATION.md) |
 | Drive Stage 4 authorization and Google Cloud setup | [Driver/STAGE_04_AUTHORIZATION.md](Driver/STAGE_04_AUTHORIZATION.md) |
+| Drive Stage 5 bounded search and metadata | [Driver/STAGE_05_METADATA.md](Driver/STAGE_05_METADATA.md) |
 | Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](Driver/GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
 | Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](Driver/GOOGLE_DRIVE_ARCHITECTURE.md) |
 | Availability presentation contract | [AVAILABILITY_PRESENTATION.md](AVAILABILITY_PRESENTATION.md) |
