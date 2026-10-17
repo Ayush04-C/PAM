@@ -1,12 +1,14 @@
-"""Bounded metadata-only Drive reads, independent of MCP and model execution."""
+"""Bounded read-only Drive metadata and supported content, without model execution."""
 
 from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
+from time import monotonic
 from typing import Any
 
 from google.auth.transport.requests import AuthorizedSession, Request
@@ -21,6 +23,9 @@ _FIELDS = "id,name,mimeType,modifiedTime,trashed,driveId"
 _ID = re.compile(r"[A-Za-z0-9_-]{1,256}\Z")
 _MIME = re.compile(r"[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+\Z")
 _MAX_RESPONSE_BYTES = 128 * 1024
+MAX_CONTENT_BYTES = 256 * 1024
+MAX_CONTENT_CHARS = 12_000
+CONTENT_MIMES = {"text/plain", "application/vnd.google-apps.document"}
 _ERRORS = {
     "invalid_request": "Invalid Drive request. Check the search or file identifier.",
     "consent_required": "Drive read consent is required for this owner.",
@@ -30,6 +35,10 @@ _ERRORS = {
     "rate_limited": "Drive rate limit reached. Please retry later.",
     "temporary_failure": "Drive is temporarily unavailable. Please retry later.",
     "invalid_response": "Drive returned invalid or oversized metadata.",
+    "unsupported_content": "Only Google Docs and UTF-8 text content are supported.",
+    "content_too_large": "Drive content exceeds PAM's size limit. Use a smaller file.",
+    "invalid_content": "Drive content is empty or is not valid UTF-8 text.",
+    "download_denied": "Downloading this Drive file is not permitted.",
 }
 
 
@@ -58,6 +67,32 @@ class DrivePage:
     files: tuple[DriveFile, ...] = field(repr=False)
     next_page_token: str | None = field(default=None, repr=False)
     incomplete_search: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class DriveContent:
+    file: DriveFile = field(repr=False)
+    passages: tuple[str, ...] = field(repr=False)
+
+
+def content_passages(raw: bytes) -> tuple[str, ...]:
+    """Strict UTF-8, bounded full text and stable 1000-character passages."""
+    if len(raw) > MAX_CONTENT_BYTES:
+        raise DriveReadError("content_too_large")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeError:
+        raise DriveReadError("invalid_content") from None
+    if len(text) > MAX_CONTENT_CHARS:
+        raise DriveReadError("content_too_large")
+    if "\x00" in text:
+        raise DriveReadError("invalid_content")
+    text = "".join(
+        c for c in text if c in "\n\r\t" or unicodedata.category(c) not in {"Cc", "Cf"}
+    )
+    if not text.strip():
+        raise DriveReadError("invalid_content")
+    return tuple(text[i : i + 1000] for i in range(0, len(text), 1000))
 
 
 def _valid_token(value: object) -> bool:
@@ -110,7 +145,7 @@ def _metadata(value: object) -> DriveFile:
 
 
 class GoogleDriveReader:
-    """One page per call; no content, writes, arbitrary URLs or durable memory."""
+    """Bounded reads; no writes, arbitrary URLs, model calls or durable memory."""
 
     def __init__(self, authorization: DriveAuthorization) -> None:
         self._authorization = authorization
@@ -186,6 +221,47 @@ class GoogleDriveReader:
             raise DriveReadError("invalid_response")
         return result
 
+    def get_content(self, owner: MemoryOwnerId, file_id: str) -> DriveContent:
+        if not isinstance(file_id, str) or not _ID.fullmatch(file_id):
+            raise DriveReadError("invalid_request")
+        details = self._request(
+            owner,
+            f"{_ROOT}/{file_id}",
+            {
+                "fields": _FIELDS + ",capabilities(canDownload),size",
+                "supportsAllDrives": "false",
+            },
+            content=True,
+        )
+        metadata = _metadata(details)
+        if metadata.file_id != file_id:
+            raise DriveReadError("invalid_response")
+        if metadata.mime_type not in CONTENT_MIMES:
+            raise DriveReadError("unsupported_content")
+        capabilities = details.get("capabilities")
+        if (
+            not isinstance(capabilities, dict)
+            or capabilities.get("canDownload") is not True
+        ):
+            raise DriveReadError("download_denied")
+        params: dict[str, str | int]
+        if metadata.mime_type == "text/plain":
+            size = details.get("size")
+            if (
+                not isinstance(size, str)
+                or not size.isascii()
+                or not size.isdecimal()
+                or len(size) > 20
+            ):
+                raise DriveReadError("invalid_response")
+            if int(size) > MAX_CONTENT_BYTES:
+                raise DriveReadError("content_too_large")
+            url, params = f"{_ROOT}/{file_id}", {"alt": "media"}
+        else:
+            url, params = f"{_ROOT}/{file_id}/export", {"mimeType": "text/plain"}
+        raw = self._fetch(owner, url, params, limit=MAX_CONTENT_BYTES, content=True)
+        return DriveContent(metadata, content_passages(raw))
+
     def _request(
         self,
         owner: MemoryOwnerId,
@@ -193,9 +269,36 @@ class GoogleDriveReader:
         params: dict[str, str | int],
         *,
         paginated: bool = False,
+        content: bool = False,
     ) -> dict[str, Any]:
+        raw = self._fetch(
+            owner,
+            url,
+            params,
+            limit=_MAX_RESPONSE_BYTES,
+            paginated=paginated,
+            content=content,
+        )
         try:
-            credentials = self._authorization.read_credentials(owner)
+            payload = json.loads(raw)
+        except (ValueError, UnicodeError, RecursionError):
+            raise DriveReadError("invalid_response") from None
+        if not isinstance(payload, dict):
+            raise DriveReadError("invalid_response")
+        return payload
+
+    def _fetch(
+        self,
+        owner: MemoryOwnerId,
+        url: str,
+        params: dict[str, str | int],
+        *,
+        limit: int,
+        content: bool = False,
+        paginated: bool = False,
+    ) -> bytes:
+        try:
+            credentials = self._authorization.read_credentials(owner, content=content)
             # Refresh was checked above. Do not retry a 401 with an implicit grant.
             with (
                 AuthorizedSession(
@@ -207,21 +310,24 @@ class GoogleDriveReader:
                     url, params=params, timeout=20, stream=True, allow_redirects=False
                 ) as response,
             ):
+                started = monotonic()
                 raw = bytearray()
                 for chunk in response.iter_content(chunk_size=16384):
+                    if monotonic() - started > 20:
+                        raise DriveReadError("temporary_failure")
+                    if len(raw) + len(chunk) > limit:
+                        raise DriveReadError(
+                            "content_too_large" if content else "invalid_response"
+                        )
                     raw.extend(chunk)
-                    if len(raw) > _MAX_RESPONSE_BYTES:
-                        raise DriveReadError("invalid_response")
-                try:
-                    payload = json.loads(raw)
-                except (ValueError, UnicodeError, RecursionError):
-                    payload = None
                 status = response.status_code
                 if status != 200:
+                    try:
+                        payload = json.loads(raw)
+                    except (ValueError, UnicodeError, RecursionError):
+                        payload = None
                     self._http_error(status, payload, paginated)
-                if not isinstance(payload, dict):
-                    raise DriveReadError("invalid_response")
-                return payload
+                return bytes(raw)
         except DriveReadError:
             raise
         except DriveConsentRequired:
