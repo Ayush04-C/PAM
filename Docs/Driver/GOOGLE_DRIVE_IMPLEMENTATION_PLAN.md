@@ -1,5 +1,16 @@
 # Google Drive MCP implementation plan
 
+**Architecture revision, 2026-10-17:** use the existing `pam/mcp/server.py` with
+`pam/mcp/calendar.py` and proposed `pam/mcp/driver.py`. Reuse and extend suitable
+existing helpers, including helpers in Calendar files; no separate Drive server
+or `pam/drive` package is required. The current
+[Stage 1 contract](STAGE_01_BOUNDARIES.md) takes precedence over the independent
+server/package proposals below. Adapt D3 to shared-server tool registration and
+D4 to validated tool dispatch within that server. Preserve read-only capability
+validation, consent, Calendar behavior and credential safety. The original audit
+and detailed roadmap below remain reference material; obsolete topology and
+subprocess-isolation assumptions must not be implemented as requirements.
+
 Status: planning proposal for architecture review; no feature implemented.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
