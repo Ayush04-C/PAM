@@ -24,6 +24,7 @@ class DriveBoundary:
     owner: MemoryOwnerId
     model_destination: str
     kind: DriveDataKind
+    grant_identity: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +36,7 @@ class DriveConsent:
     allow_read: bool = False
     allow_metadata_transfer: bool = False
     allow_content_transfer: bool = False
+    grant_identity: str | None = field(default=None, repr=False)
 
     def require_read(self, owner: MemoryOwnerId) -> None:
         if self.owner != owner or self.allow_read is not True:
@@ -54,7 +56,7 @@ class DriveConsent:
             or allowed is not True
         ):
             raise DriveConsentRequired("Drive model-transfer consent is required.")
-        return DriveBoundary(owner, destination, kind)
+        return DriveBoundary(owner, destination, kind, self.grant_identity)
 
 
 @dataclass(frozen=True, slots=True)

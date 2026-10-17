@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from functools import partial
+from hashlib import sha256
 from typing import Literal
 
 from google.auth.exceptions import RefreshError
@@ -229,6 +230,16 @@ class DriveAuthorization:
             grant.allow_read,
             matches and grant.allow_metadata_transfer,
             False,
+            sha256(
+                json.dumps(
+                    [
+                        grant.account_id,
+                        grant.client_id,
+                        grant.refresh_token.get_secret_value(),
+                        sorted(grant.scopes),
+                    ]
+                ).encode()
+            ).hexdigest(),
         )
 
     def disconnect(self) -> None:
