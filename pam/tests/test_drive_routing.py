@@ -414,3 +414,33 @@ async def test_destination_change_blocks_retained_drive_history(harness):
     provider.data_destination = "another-provider"
     assert "consent" in await service.respond("Repeat", memory_owner=OWNER)
     assert len(provider.turns) == 2 and harness.memory.ingested == []
+
+
+@pytest.mark.asyncio
+async def test_initial_model_timeout_is_distinct_and_creates_no_file_choices(harness):
+    from pam.conversation.provider import ModelTimeout
+
+    service, provider = harness.build([])
+
+    async def timeout(turn):
+        raise ModelTimeout("PRIVATE")
+
+    provider.respond = timeout
+    answer = await service.respond("Find PAM TEST", memory_owner=OWNER)
+    assert "timed out" in answer and "PRIVATE" not in answer
+    assert harness.drive.calls == [] and await harness.store.load("default") == ()
+
+
+@pytest.mark.asyncio
+async def test_model_timeout_after_calendar_retains_verified_partial_answer(harness):
+    from pam.conversation.provider import ModelTimeout
+
+    service, provider = harness.build([call("get_weekly_availability")])
+
+    async def timeout(*args):
+        raise ModelTimeout("PRIVATE")
+
+    provider.respond_after_tool = timeout
+    answer = await service.respond("Find file and check Monday", memory_owner=OWNER)
+    assert "Calendar: free on Monday" in answer and "timed out" in answer
+    assert "PRIVATE" not in answer and harness.memory.ingested == []
