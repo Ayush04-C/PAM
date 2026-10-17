@@ -31,14 +31,7 @@ def test_status_is_offline_and_exposes_only_approved_fields(monkeypatch, capsys)
     monkeypatch.setenv("PAM_DRIVE_CREDENTIAL_STORAGE_PATH", "private-drive.bin")
     monkeypatch.setenv("PAM_DRIVE_MAX_CONTEXT_CHARS", "500")
     monkeypatch.setattr("sys.argv", ["pam", "--status"])
-    for name in (
-        "create_model_provider",
-        "create_mcp_server",
-        "local_client_from_server",
-        "create_memory_service",
-        "ConversationService",
-    ):
-        monkeypatch.setattr(cli, name, unexpected_call)
+    monkeypatch.setattr(cli, "create_conversation_service", unexpected_call)
     monkeypatch.setattr(cli.asyncio, "run", unexpected_call)
     monkeypatch.setattr("builtins.input", unexpected_call)
     cli.main()
@@ -69,7 +62,7 @@ def test_status_invalid_configuration_fails_without_echoing_input(
 ):
     monkeypatch.setenv(name, value)
     monkeypatch.setattr("sys.argv", ["pam", "--status"])
-    monkeypatch.setattr(cli, "create_model_provider", unexpected_call)
+    monkeypatch.setattr(cli, "create_conversation_service", unexpected_call)
     with pytest.raises(SystemExit) as error:
         cli.main()
     assert error.value.code == 2
@@ -84,19 +77,23 @@ async def test_interactive_status_new_and_normal_turns(monkeypatch, capsys):
     provider = ScriptedModelProvider(
         [ModelDecision(text="First answer"), ModelDecision(text="Fresh answer")]
     )
-    monkeypatch.setattr(cli, "create_model_provider", lambda _: provider)
-    monkeypatch.setattr(cli, "create_mcp_server", lambda _: object())
-    monkeypatch.setattr(cli, "local_client_from_server", lambda _: NoCalendar())
+    monkeypatch.setattr(
+        "pam.conversation.factory.create_model_provider", lambda _: provider
+    )
+    monkeypatch.setattr("pam.mcp.server.create_mcp_server", lambda _: object())
+    monkeypatch.setattr(
+        "pam.conversation.mcp_client.local_client_from_server", lambda _: NoCalendar()
+    )
     services = []
-    service_type = cli.ConversationService
+    service_factory = cli.create_conversation_service
 
     def capture_service(*args, **kwargs):
-        assert kwargs["drive_max_context_chars"] == 123
-        service = service_type(*args, **kwargs)
+        service = service_factory(*args, **kwargs)
+        assert service._drive_max_context_chars == 123
         services.append(service)
         return service
 
-    monkeypatch.setattr(cli, "ConversationService", capture_service)
+    monkeypatch.setattr(cli, "create_conversation_service", capture_service)
     messages = iter(["/status", "Hello", "/new", "Hello again", "exit"])
     monkeypatch.setattr("builtins.input", lambda _: next(messages))
     await cli.run(settings)
@@ -113,15 +110,13 @@ def test_telegram_receives_the_same_configured_limit(monkeypatch):
     from pam.telegram import bot
 
     settings = Settings(_env_file=None, drive_max_context_chars=321)
-    monkeypatch.setattr(bot, "create_model_provider", lambda _: object())
-    monkeypatch.setattr(bot, "create_mcp_server", lambda _: object())
-    monkeypatch.setattr(bot, "local_client_from_server", lambda _: object())
     captured = {}
 
-    def capture_service(*args, **kwargs):
+    def capture_service(config, **kwargs):
+        captured["settings"] = config
         captured.update(kwargs)
         return object()
 
-    monkeypatch.setattr(bot, "ConversationService", capture_service)
+    monkeypatch.setattr(bot, "create_conversation_service", capture_service)
     bot.build_conversation_service(settings)
-    assert captured["drive_max_context_chars"] == 321
+    assert captured["settings"].drive_max_context_chars == 321
