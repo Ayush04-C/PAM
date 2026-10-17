@@ -20,6 +20,16 @@ The `ModelProvider` protocol has `respond` and `respond_after_tool` methods. `Bh
 
 Provider exceptions are normalized to an assistant-facing unavailable message. PAM does not reveal SDK responses, API keys, requests, or tool internals in that message.
 
+BharatCode request timeouts have a distinct safe `timed out` response. They do
+not mean MCP tools are disconnected: a failure before the first tool call leaves
+no file choices, so `file 1` follow-ups must wait for a successful search.
+`PAM_BHARATCODE_TIMEOUT_SECONDS` optionally sets the per-request deadline
+(default 30, range 5–180 seconds). The SDK still permits one retry, so elapsed
+turn time may exceed this setting. A longer deadline does not repair an upstream
+outage, and the model catalog being reachable does not prove generation works.
+There is no automatic model fallback; changing model/endpoint requires reviewing
+Drive transfer consent for the new destination.
+
 ## Tool-calling loop
 
 The host validates the requested tool, rechecks sensitive-data consent, invokes
