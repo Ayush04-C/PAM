@@ -12,6 +12,10 @@ class ModelUnavailable(RuntimeError):
     """A model provider could not safely produce a usable response."""
 
 
+class ModelTimeout(ModelUnavailable):
+    """The configured provider did not answer before its request deadline."""
+
+
 class ModelProvider(Protocol):
     """Minimal model surface required by the conversation orchestrator."""
 

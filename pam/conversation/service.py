@@ -30,7 +30,7 @@ from pam.conversation.models import (
     ToolExchange,
     ToolResult,
 )
-from pam.conversation.provider import ModelProvider
+from pam.conversation.provider import ModelProvider, ModelTimeout
 from pam.conversation.store import (
     ConversationStore,
     InMemoryConversationStore,
@@ -44,6 +44,10 @@ from pam.memory.service import DisabledMemoryService, MemoryService, MemoryUnava
 _ALLOWED_TOOL = "get_weekly_availability"
 _TOOL_FAILURE = "I couldn't retrieve calendar availability. Please try again."
 _MODEL_FAILURE = "PAM's conversation service is unavailable. Please try again."
+_MODEL_TIMEOUT = (
+    "The model provider timed out before answering. "
+    "Please retry later or check the provider's availability."
+)
 _READ_ONLY = "Calendar access is currently read-only; I can't change events."
 _MEMORY_SAVE_FAILURE = "I couldn't save that memory. Please try again."
 _MEMORY_FORGET_FAILURE = "I couldn't forget that memory. Please try again."
@@ -238,6 +242,8 @@ class ConversationService:
             drive_offered = False
         try:
             decision = await self._provider.respond(turn)
+        except ModelTimeout:
+            return _MODEL_TIMEOUT
         except Exception:
             return _MODEL_FAILURE
         limit = 6 if drive_offered else self._max_tool_rounds
@@ -428,6 +434,8 @@ class ConversationService:
                 decision = await self._provider.respond_after_tool(
                     turn, call, ToolResult(call.name, result)
                 )
+            except ModelTimeout:
+                return self._partial_answer(completed_turn, _MODEL_TIMEOUT)
             except Exception:
                 return self._partial_answer(completed_turn, _MODEL_FAILURE)
             turn = completed_turn

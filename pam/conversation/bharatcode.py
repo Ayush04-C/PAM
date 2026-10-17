@@ -17,7 +17,7 @@ from openai import (
 )
 
 from pam.conversation.models import ModelDecision, ModelTurn, ToolCall, ToolResult
-from pam.conversation.provider import ModelUnavailable
+from pam.conversation.provider import ModelTimeout, ModelUnavailable
 
 
 class BharatCodeProvider:
@@ -30,9 +30,10 @@ class BharatCodeProvider:
         base_url: str,
         *,
         client: Any | None = None,
+        timeout_seconds: float = 30.0,
     ) -> None:
         self._client: Any = client or AsyncOpenAI(
-            api_key=api_key, base_url=base_url, max_retries=1, timeout=30.0
+            api_key=api_key, base_url=base_url, max_retries=1, timeout=timeout_seconds
         )
         self._model = model
         self.data_destination = f"bharatcode:{base_url.rstrip('/')}|{model}"
@@ -105,10 +106,11 @@ class BharatCodeProvider:
                 ],
                 tool_choice="auto",
             )
+        except APITimeoutError:
+            raise ModelTimeout("model provider request timed out") from None
         except (
             APIConnectionError,
             APIError,
-            APITimeoutError,
             AuthenticationError,
             BadRequestError,
             NotFoundError,
