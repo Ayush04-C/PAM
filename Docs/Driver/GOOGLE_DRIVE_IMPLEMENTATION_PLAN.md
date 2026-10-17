@@ -11,12 +11,13 @@ validation, consent, Calendar behavior and credential safety. The original audit
 and detailed roadmap below remain reference material; obsolete topology and
 subprocess-isolation assumptions must not be implemented as requirements.
 
-Status: Drive OAuth, bounded metadata reads and shared MCP tools are implemented.
-Live search and metadata lookup through the MCP CLI passed for the designated
-test file. Assistant Drive routing is not implemented.
+Status: Drive OAuth, bounded metadata reads, shared MCP tools and consent-gated
+assistant routing are implemented. Direct MCP live acceptance passed. Hosted-model
+metadata conversation acceptance is pending explicit saved transfer consent.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
-Current stage: [Stage 6 MCP tools and terminal testing](STAGE_06_MCP_TOOLS.md).
+Current stage: [Stage 7 assistant routing](STAGE_07_ROUTING.md).
+The [Stage 6 shared MCP tools](STAGE_06_MCP_TOOLS.md) are complete and reused.
 The [Stage 5 metadata adapter](STAGE_05_METADATA.md) is complete and reused by MCP.
 The [Stage 4 authorization](STAGE_04_AUTHORIZATION.md) is implemented; its
 shared refresh helper is exercised by the live metadata check.
