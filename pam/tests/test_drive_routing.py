@@ -235,8 +235,7 @@ async def test_user_supplied_file_id_can_be_looked_up(harness):
     )
     assert (
         await service.respond("Get metadata for file-id", memory_owner=OWNER)
-        == "Metadata"
-    )
+    ).startswith("Metadata\n\nVerified Drive choices")
     assert len(harness.drive.calls) == 1
 
 

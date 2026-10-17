@@ -274,8 +274,8 @@ async def test_real_metadata_reader_mcp_client_and_conversation_work_together(re
         drive_mcp=LocalDriveMcpClient(server, OWNER),
         drive_consent_loader=state.auth.consent,
     )
-    assert (
-        await service.respond("Find PAM TEST", memory_owner=OWNER) == "Found metadata"
+    assert (await service.respond("Find PAM TEST", memory_owner=OWNER)).startswith(
+        "Found metadata\n\nVerified Drive choices"
     )
     assert len(state.calls) == len(state.refreshes) == 2
     assert provider.tool_results[-1].result["untrusted"] is True
