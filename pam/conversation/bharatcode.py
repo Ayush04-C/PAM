@@ -49,6 +49,19 @@ class BharatCodeProvider:
             raise ModelUnavailable("model provider returned an invalid tool call")
         messages = [
             *self._initial_messages(turn),
+            *self._tool_messages(tool_call, tool_result),
+        ]
+        completion = await self._create_completion(messages, turn)
+        message = self._message_from_completion(completion)
+        return self._decision_from_message(message)
+
+    @staticmethod
+    def _tool_messages(
+        tool_call: ToolCall, tool_result: ToolResult
+    ) -> list[dict[str, Any]]:
+        if not tool_call.call_id:
+            raise ModelUnavailable("model provider returned an invalid tool call")
+        return [
             {
                 "role": "assistant",
                 "content": None,
@@ -71,9 +84,6 @@ class BharatCodeProvider:
                 "content": json.dumps(dict(tool_result.result), separators=(",", ":")),
             },
         ]
-        completion = await self._create_completion(messages, turn)
-        message = self._message_from_completion(completion)
-        return self._decision_from_message(message)
 
     async def _create_completion(
         self, messages: list[dict[str, Any]], turn: ModelTurn
@@ -134,6 +144,13 @@ class BharatCodeProvider:
                 for message in turn.history
             ],
             {"role": "user", "content": turn.user_message},
+            *[
+                message
+                for exchange in turn.tool_exchanges
+                for message in BharatCodeProvider._tool_messages(
+                    exchange.call, exchange.result
+                )
+            ],
         ]
 
     @staticmethod
@@ -150,6 +167,8 @@ class BharatCodeProvider:
     def _decision_from_message(message: Any) -> ModelDecision:
         tool_calls = getattr(message, "tool_calls", None) or []
         if tool_calls:
+            if len(tool_calls) != 1:
+                raise ModelUnavailable("parallel tool calls are not supported")
             call = tool_calls[0]
             function = getattr(call, "function", None)
             call_id = getattr(call, "id", None)
