@@ -12,6 +12,7 @@ __pycache__/
 !.env.example
 .pam-google-credentials.bin
 .pam-drive-credentials.bin
+.pam-credential-*
 .idea/
 .vscode/
 .DS_Store
