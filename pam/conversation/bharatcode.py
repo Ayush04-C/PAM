@@ -35,6 +35,7 @@ class BharatCodeProvider:
             api_key=api_key, base_url=base_url, max_retries=1, timeout=30.0
         )
         self._model = model
+        self.data_destination = f"bharatcode:{base_url.rstrip('/')}|{model}"
 
     async def respond(self, turn: ModelTurn) -> ModelDecision:
         completion = await self._create_completion(self._initial_messages(turn), turn)
@@ -111,6 +112,11 @@ class BharatCodeProvider:
     def _initial_messages(turn: ModelTurn) -> list[dict[str, Any]]:
         return [
             {"role": "system", "content": turn.system_instruction},
+            *(
+                [{"role": "user", "content": turn.drive_context.as_untrusted_text()}]
+                if turn.drive_context is not None
+                else []
+            ),
             *(
                 [
                     {

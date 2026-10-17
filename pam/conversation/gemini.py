@@ -15,8 +15,15 @@ class GeminiProvider:
     """Use Google's maintained Gen AI SDK for provider-neutral PAM turns."""
 
     def __init__(self, api_key: str, model: str) -> None:
-        self._client = genai.Client(api_key=api_key)
+        # Pin the default API destination so consent cannot silently follow env routing.
+        endpoint = "https://generativelanguage.googleapis.com"
+        self._client = genai.Client(
+            api_key=api_key,
+            vertexai=False,
+            http_options=types.HttpOptions(base_url=endpoint),
+        )
         self._model = model
+        self.data_destination = f"gemini:{endpoint}|{model}"
 
     async def respond(self, turn: ModelTurn) -> ModelDecision:
         response = await self._generate(self._initial_contents(turn), turn)
@@ -79,6 +86,16 @@ class GeminiProvider:
     @staticmethod
     def _initial_contents(turn: ModelTurn) -> list[object]:
         return [
+            *(
+                [
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=turn.drive_context.as_untrusted_text())],
+                    )
+                ]
+                if turn.drive_context is not None
+                else []
+            ),
             *(
                 [
                     types.Content(
