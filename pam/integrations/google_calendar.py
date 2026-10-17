@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from google.auth.exceptions import RefreshError
@@ -44,15 +44,23 @@ class GoogleOAuthConfig:
 class GoogleOAuthClient:
     """Create and exchange local OAuth authorization flows."""
 
-    def __init__(self, config: GoogleOAuthConfig) -> None:
+    def __init__(
+        self,
+        config: GoogleOAuthConfig,
+        *,
+        scopes: tuple[str, ...] = GOOGLE_CALENDAR_SCOPES,
+        include_granted_scopes: bool = True,
+    ) -> None:
         self._config = config
+        self._scopes = scopes
+        self._include_granted_scopes = include_granted_scopes
 
     def authorization_url(self, state: str, code_verifier: str) -> str:
         """Return a Google authorization URL requesting only the read-only scope."""
         flow = self._flow(code_verifier)
         url, _ = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
+            include_granted_scopes=str(self._include_granted_scopes).lower(),
             prompt="consent",
             state=state,
         )
@@ -60,12 +68,16 @@ class GoogleOAuthClient:
 
     def exchange_code(self, code: str, code_verifier: str) -> str:
         """Exchange an authorization code and return only its refresh token."""
-        flow = self._flow(code_verifier)
-        flow.fetch_token(code=code)
-        refresh_token = flow.credentials.refresh_token
+        refresh_token = self.exchange_credentials(code, code_verifier).refresh_token
         if not refresh_token:
             raise GoogleReconnectRequired("Google did not provide a refresh credential")
         return str(refresh_token)
+
+    def exchange_credentials(self, code: str, code_verifier: str) -> Credentials:
+        """Exchange a code; callers validate actual scopes before persistence."""
+        flow = self._flow(code_verifier)
+        flow.fetch_token(code=code, timeout=20)
+        return cast(Credentials, flow.credentials)
 
     def _flow(self, code_verifier: str) -> Flow:
         return Flow.from_client_config(
@@ -77,7 +89,7 @@ class GoogleOAuthClient:
                     "token_uri": GOOGLE_TOKEN_URI,
                 }
             },
-            scopes=list(GOOGLE_CALENDAR_SCOPES),
+            scopes=list(self._scopes),
             redirect_uri=self._config.redirect_uri,
             code_verifier=code_verifier,
         )
