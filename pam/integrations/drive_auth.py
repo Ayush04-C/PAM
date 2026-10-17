@@ -23,6 +23,15 @@ from pam.security.credentials import EncryptedFileCredentialStore
 
 DRIVE_METADATA_SCOPE = "https://www.googleapis.com/auth/drive.metadata.readonly"
 DRIVE_SCOPES = (DRIVE_METADATA_SCOPE,)
+DRIVE_CONTENT_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+
+
+def content_scope(scopes: tuple[str, ...]) -> bool:
+    """Accept only the known read-only scope profile, including Google aggregation."""
+    return DRIVE_CONTENT_SCOPE in scopes and set(scopes) <= {
+        DRIVE_CONTENT_SCOPE,
+        DRIVE_METADATA_SCOPE,
+    }
 
 
 class DriveAuthorizationError(RuntimeError):
@@ -57,14 +66,19 @@ class DriveAuthorization:
         owner: MemoryOwnerId,
         account_email: str,
         model_destination: str | None,
+        content_enabled: bool = False,
     ) -> None:
         self.config = config
         self.store = store
         self.owner = owner
         self.account_email = account_email.strip().casefold()
         self.model_destination = model_destination
+        self.content_enabled = content_enabled
+        self.requested_scopes = (
+            (DRIVE_CONTENT_SCOPE,) if content_enabled else DRIVE_SCOPES
+        )
         self.oauth = GoogleOAuthClient(
-            config, scopes=DRIVE_SCOPES, include_granted_scopes=False
+            config, scopes=self.requested_scopes, include_granted_scopes=False
         )
 
     def load(self) -> DriveGrant:
@@ -82,7 +96,10 @@ class DriveAuthorization:
             grant.owner != self.owner.value
             or grant.client_id != self.config.client_id
             or grant.account_email.casefold() != self.account_email
-            or set(grant.scopes) != set(DRIVE_SCOPES)
+            or (
+                set(grant.scopes) != {DRIVE_METADATA_SCOPE}
+                and not content_scope(grant.scopes)
+            )
         ):
             raise DriveAuthorizationError(
                 "Drive configuration changed. Reconnect Drive."
@@ -117,9 +134,15 @@ class DriveAuthorization:
         """Validate actual grant and account before replacing any saved credentials."""
         credentials = self.oauth.exchange_credentials(code, verifier)
         scopes = credentials.granted_scopes
-        if scopes is None or set(scopes) != set(DRIVE_SCOPES):
+        if scopes is None or not (
+            content_scope(tuple(scopes))
+            if self.content_enabled
+            else set(scopes) == set(DRIVE_SCOPES)
+        ):
             raise DriveAuthorizationError(
-                "Google did not grant exactly metadata read access."
+                "Google did not grant exactly the requested read-only access."
+                if self.content_enabled
+                else "Google did not grant exactly metadata read access."
             )
         email, account_id = self._account(credentials)
         if email != self.account_email:
@@ -131,6 +154,10 @@ class DriveAuthorization:
             previous = self.load()
             if previous.account_id != account_id:
                 raise DriveAuthorizationError("Drive account changed. Reconnect Drive.")
+            if set(previous.scopes) != set(scopes):
+                raise DriveAuthorizationError(
+                    "Scope upgrade needs a new refresh grant. Reauthorize Drive."
+                )
             # Prove the old refresh credential still works before retaining it.
             self.check_connection()
             refresh = previous.refresh_token.get_secret_value()
@@ -155,13 +182,17 @@ class DriveAuthorization:
         ):
             raise DriveAuthorizationError("Drive account changed. Reconnect Drive.")
 
-    def read_credentials(self, owner: MemoryOwnerId) -> Credentials:
+    def read_credentials(
+        self, owner: MemoryOwnerId, *, content: bool = False
+    ) -> Credentials:
         """Check the current owner and saved read consent before any network I/O."""
         if owner != self.owner:
             raise DriveConsentRequired("Drive read consent is required.")
         grant = self.load()
         if grant.allow_read is not True:
             raise DriveConsentRequired("Drive read consent is required.")
+        if content and (not self.content_enabled or not content_scope(grant.scopes)):
+            raise DriveConsentRequired("Drive content read access is required.")
         return self._refresh_credentials(grant)
 
     def _refresh_credentials(self, grant: DriveGrant) -> Credentials:
@@ -172,7 +203,7 @@ class DriveAuthorization:
             token_uri=GOOGLE_TOKEN_URI,
             client_id=self.config.client_id,
             client_secret=self.config.client_secret,
-            scopes=list(DRIVE_SCOPES),
+            scopes=list(grant.scopes),
         )
         try:
             credentials.refresh(partial(Request(), timeout=20))
@@ -184,7 +215,7 @@ class DriveAuthorization:
             ) from error
         if credentials.granted_scopes is not None and set(
             credentials.granted_scopes
-        ) != set(DRIVE_SCOPES):
+        ) != set(grant.scopes):
             raise DriveAuthorizationError("Drive permissions changed. Reconnect Drive.")
         return credentials
 
@@ -194,10 +225,11 @@ class DriveAuthorization:
         allow_read: bool,
         allow_metadata_transfer: bool,
         confirmed_destination: str | None,
+        allow_content_transfer: bool = False,
     ) -> None:
-        """Operator consent is separate from Google OAuth; content stays disabled."""
+        """Require explicit content consent separately from Google OAuth."""
         grant = self.load()
-        if allow_metadata_transfer and (
+        if (allow_metadata_transfer or allow_content_transfer) and (
             not allow_read
             or not self.model_destination
             or confirmed_destination != self.model_destination
@@ -205,12 +237,20 @@ class DriveAuthorization:
             raise DriveAuthorizationError(
                 "Review and confirm the current model destination."
             )
+        if allow_content_transfer and (
+            not allow_metadata_transfer
+            or not self.content_enabled
+            or not content_scope(grant.scopes)
+        ):
+            raise DriveAuthorizationError(
+                "Enable content reads and reauthorize its read-only scope first."
+            )
         self._save(
             grant.model_copy(
                 update={
                     "allow_read": allow_read,
                     "allow_metadata_transfer": allow_read and allow_metadata_transfer,
-                    "allow_content_transfer": False,
+                    "allow_content_transfer": allow_read and allow_content_transfer,
                     "model_destination": self.model_destination
                     if allow_metadata_transfer
                     else None,
@@ -229,7 +269,10 @@ class DriveAuthorization:
             self.model_destination or "",
             grant.allow_read,
             matches and grant.allow_metadata_transfer,
-            False,
+            matches
+            and self.content_enabled
+            and grant.allow_content_transfer
+            and content_scope(grant.scopes),
             sha256(
                 json.dumps(
                     [
