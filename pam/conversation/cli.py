@@ -29,7 +29,11 @@ def format_status(settings: Settings) -> str:
             f"Model provider: {settings.model_provider}",
             f"Model configuration: {model_configuration}",
             f"Calendar backend: {settings.calendar_backend}",
-            "Drive tools: not implemented",
+            (
+                "Drive tools: available through direct MCP diagnostics"
+                if settings.drive_enabled
+                else "Drive tools: disabled"
+            ),
             "Drive model-transfer consent: not collected by CLI",
             f"Drive context limit: {settings.drive_max_context_chars} characters",
             "Live connectivity: not checked",
