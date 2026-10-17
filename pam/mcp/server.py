@@ -38,12 +38,13 @@ def create_mcp_server(settings: Settings | None = None) -> MCPServer:
     if active_settings.drive_enabled:
         tools.extend(
             create_drive_tools(
-                GoogleDriveReader(create_drive_authorization(active_settings))
+                GoogleDriveReader(create_drive_authorization(active_settings)),
+                content_enabled=active_settings.drive_content_enabled,
             )
         )
     return MCPServer(
         name="PAM",
-        description="Private read-only Calendar and Drive metadata tools.",
+        description="Private read-only Calendar and Drive tools.",
         tools=tools,
     )
 
