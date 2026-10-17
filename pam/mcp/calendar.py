@@ -31,16 +31,10 @@ _TOOL_DESCRIPTION = (
 )
 
 
-class WeeklyAvailabilityRequest(ArgModelBase):
-    """Strict MCP arguments while keeping business validation in the application."""
+class SafeToolArguments(ArgModelBase):
+    """Shared strict arguments with payload-free validation errors."""
 
     model_config = ConfigDict(extra="forbid")
-
-    start_date: date
-    end_date: date
-    timezone: str
-    minimum_duration_minutes: int | None = None
-    requested_time: str | None = None
 
     @classmethod
     def model_validate(
@@ -65,8 +59,18 @@ class WeeklyAvailabilityRequest(ArgModelBase):
                 by_alias=by_alias,
                 by_name=by_name,
             )
-        except ValidationError as error:
-            raise ToolError("invalid tool input") from error
+        except ValidationError:
+            raise ToolError("invalid tool input") from None
+
+
+class WeeklyAvailabilityRequest(SafeToolArguments):
+    """Calendar arguments retain the existing schema and business validation."""
+
+    start_date: date
+    end_date: date
+    timezone: str
+    minimum_duration_minutes: int | None = None
+    requested_time: str | None = None
 
     @field_validator("start_date", "end_date", mode="before")
     @classmethod
@@ -158,8 +162,8 @@ class CalendarMcpAdapter:
         )
 
 
-def create_calendar_mcp_server(availability_service: AvailabilityService) -> MCPServer:
-    """Create a one-tool MCP server bound only to AvailabilityService."""
+def create_calendar_tool(availability_service: AvailabilityService) -> Tool:
+    """Build the existing Calendar tool for standalone or shared composition."""
     adapter = CalendarMcpAdapter(availability_service)
     tool = Tool.from_function(
         adapter.get_weekly_availability,
@@ -175,8 +179,13 @@ def create_calendar_mcp_server(availability_service: AvailabilityService) -> MCP
     )
     tool.fn_metadata.arg_model = WeeklyAvailabilityRequest
     tool.parameters = WeeklyAvailabilityRequest.model_json_schema()
+    return tool
+
+
+def create_calendar_mcp_server(availability_service: AvailabilityService) -> MCPServer:
+    """Keep the standalone Calendar factory compatible with existing clients."""
     return MCPServer(
         name="PAM Calendar",
         description="Private read-only Calendar availability tools.",
-        tools=[tool],
+        tools=[create_calendar_tool(availability_service)],
     )
