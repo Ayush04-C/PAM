@@ -12,6 +12,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from pam.conversation.file_context import FileReferences, google_file_ids, selection
 from pam.conversation.mcp_client import (
     DRIVE_TOOLS,
     CalendarMcpClient,
@@ -29,7 +30,11 @@ from pam.conversation.models import (
     ToolResult,
 )
 from pam.conversation.provider import ModelProvider
-from pam.conversation.store import ConversationStore, InMemoryConversationStore
+from pam.conversation.store import (
+    ConversationStore,
+    InMemoryConversationStore,
+    SessionOwnerMismatch,
+)
 from pam.conversation.system_prompt import build_system_instruction
 from pam.domain import DISPLAY_TIMEZONE
 from pam.memory.models import MemoryOwnerId
@@ -115,6 +120,22 @@ class ConversationService:
             await self._conversation_store.clear(session_id)
             self._memory_conversation_ids.pop(session_id, None)
 
+    def capability_help(self, owner: MemoryOwnerId) -> str:
+        """Describe only locally authorized capabilities; never make API calls."""
+        text = (
+            "Ask about Calendar availability, for example: Am I free tomorrow? "
+            "Calendar access is read-only. Use /new to clear conversation history "
+            "and temporary file choices; saved memories are preserved."
+        )
+        if self._drive_mcp is not None and self._authorize(owner, None, "metadata"):
+            text += (
+                " Drive metadata search is enabled for your owner: try Find PAM TEST, "
+                "then Show metadata for file 2, or Ask for the next page. "
+                "Drive contents cannot be read yet. "
+                "Calendar and Drive can be used together."
+            )
+        return text
+
     async def _respond_in_session(
         self,
         user_message: str,
@@ -125,6 +146,17 @@ class ConversationService:
     ) -> str:
         """Route bounded sequential calls; gate every sensitive model request."""
         now = self._clock()
+        drive_permission = (
+            self._authorize(owner, drive_consent, "metadata")
+            if self._drive_mcp is not None
+            else None
+        )
+        try:
+            references = await self._conversation_store.load_files(
+                session_id, owner, drive_permission, now
+            )
+        except SessionOwnerMismatch:
+            return _CONSENT_FAILURE
         history = await self._conversation_store.load(session_id)
         required = [m.drive_boundary for m in history if m.drive_boundary is not None]
         if drive_context is not None:
@@ -134,11 +166,26 @@ class ConversationService:
             required.append(permission)
         if not self._permissions_match(owner, drive_consent, required):
             return _CONSENT_FAILURE
-        drive_permission = (
-            self._authorize(owner, drive_consent, "metadata")
-            if self._drive_mcp is not None
-            else None
-        )
+        selected, clarification = selection(user_message, references)
+        if clarification and self._drive_mcp is not None:
+            return clarification if drive_permission else _CONSENT_FAILURE
+        if references is not None:
+            text = references.context(selected)
+            if drive_context is not None:
+                text += "\n" + drive_context.text
+            if len(text) > self._drive_max_context_chars:
+                return (
+                    "Drive references exceed the configured context limit. "
+                    "Use /new and search for fewer files."
+                )
+            drive_context = DriveContext(
+                text, drive_context.kind if drive_context else "metadata"
+            )
+            required.append(references.boundary)
+        if drive_permission is not None:
+            # Even a no-tool answer can retain a private filename from the user.
+            # Keep this session conservative until /new, including discovery failure.
+            required.append(drive_permission)
         tools = list(await self._tools_or_empty())
         if drive_permission is not None and self._drive_mcp is not None:
             with suppress(Exception):
@@ -182,19 +229,35 @@ class ConversationService:
         calendar_calls = 0
         calls = 0
         drive_chars = len(drive_context.text) if drive_context is not None else 0
+        reference_updated = False
         while True:
             if not self._permissions_match(owner, drive_consent, required):
                 return self._partial_answer(turn, _CONSENT_FAILURE)
             if decision.text is not None:
+                if selected is not None and not any(
+                    exchange.call.name == "drive_get_file_metadata"
+                    and exchange.call.arguments.get("file_id") == selected
+                    and exchange.result.result.get("error") is None
+                    for exchange in turn.tool_exchanges
+                ):
+                    return self._partial_answer(
+                        turn,
+                        "I couldn't retrieve current metadata for the selected file. "
+                        "Please retry.",
+                    )
                 boundary = next((b for b in required if b.kind == "content"), None)
                 boundary = boundary or next(iter(required), None)
+                answer = decision.text
+                if reference_updated and references is not None:
+                    answer += "\n\n" + references.display()
                 return await self._complete_turn(
                     session_id,
                     owner,
                     user_message,
-                    decision.text,
+                    answer,
                     ingest=calls == 0 and not drive_offered,
                     drive_boundary=boundary,
+                    file_references=references,
                 )
             if calls >= limit:
                 if not drive_offered:
@@ -225,7 +288,9 @@ class ConversationService:
                 if permission is None or not drive_offered or self._drive_mcp is None:
                     return self._partial_answer(turn, _CONSENT_FAILURE)
                 required.append(permission)
-                if not self._reference_allowed(turn, call.name, dict(call.arguments)):
+                if not self._reference_allowed(
+                    turn, call.name, dict(call.arguments), references, selected
+                ):
                     result = self._drive_error("invalid_request")
                 else:
                     if self._on_tool_invoked is not None:
@@ -250,6 +315,15 @@ class ConversationService:
                         "Drive metadata exceeds the configured context limit. "
                         "Request fewer files.",
                     )
+                previous_references = references
+                references = FileReferences.from_result(
+                    references, permission, call.name, dict(call.arguments), result, now
+                )
+                reference_updated = (
+                    reference_updated
+                    or result.get("error") is None
+                    or references != previous_references
+                )
             else:
                 if calendar_calls >= self._max_tool_rounds:
                     return self._partial_answer(
@@ -330,13 +404,17 @@ class ConversationService:
         ):
             return False
         return all(
-            self._authorize(owner, supplied, kind) is not None
-            for kind in {b.kind for b in required}
+            self._authorize(owner, supplied, boundary.kind) == boundary
+            for boundary in required
         )
 
     @staticmethod
     def _reference_allowed(
-        turn: ModelTurn, name: str, arguments: dict[str, Any]
+        turn: ModelTurn,
+        name: str,
+        arguments: dict[str, Any],
+        references: FileReferences | None = None,
+        selected: str | None = None,
     ) -> bool:
         if name == "drive_get_file_metadata":
             identifier = arguments.get("file_id")
@@ -350,13 +428,33 @@ class ConversationService:
                 if exchange.call.name in DRIVE_TOOLS
                 for file in exchange.result.result.get("files", [])
             }
+            if references:
+                known.update(file["file_id"] for file in references.files)
+            if selected is not None and identifier != selected:
+                return False
+            # URL text must match the recognized Google URL parser, not merely
+            # contain an ID inside an attacker-controlled URL.
+            direct_text = re.sub(r"https?://\S+", "", turn.user_message)
             explicit = re.search(
                 r"(?<![A-Za-z0-9_-])" + re.escape(identifier) + r"(?![A-Za-z0-9_-])",
-                turn.user_message,
+                direct_text,
             )
-            return identifier in known or explicit is not None
+            return (
+                identifier in known
+                or explicit is not None
+                or identifier in google_file_ids(turn.user_message)
+            )
         token = arguments.get("page_token")
         if token is None:
+            return True
+        if (
+            references
+            and references.next_page_token == token
+            and (
+                references.query == arguments.get("name")
+                and references.page_size == arguments.get("page_size", 10)
+            )
+        ):
             return True
         return any(
             exchange.call.name == "drive_search_files"
@@ -402,9 +500,15 @@ class ConversationService:
         *,
         ingest: bool,
         drive_boundary: DriveBoundary | None = None,
+        file_references: FileReferences | None = None,
     ) -> str:
         await self._conversation_store.commit_turn(
-            session_id, user_message, assistant_message, drive_boundary=drive_boundary
+            session_id,
+            user_message,
+            assistant_message,
+            drive_boundary=drive_boundary,
+            file_references=file_references,
+            owner=owner,
         )
         if ingest and drive_boundary is None:
             try:
@@ -448,20 +552,25 @@ class ConversationService:
         self, owner: MemoryOwnerId, action: str, content: str
     ) -> str:
         try:
-            if not content or content.casefold() in {
-                "all",
-                "everything",
-                "all memories",
-                "this",
-                "that",
-                "it",
-                "this document",
-                "that document",
-                "this file",
-                "that file",
-                "this summary",
-                "that summary",
-            }:
+            if (
+                selection(content, None)[1] is not None
+                or not content
+                or content.casefold()
+                in {
+                    "all",
+                    "everything",
+                    "all memories",
+                    "this",
+                    "that",
+                    "it",
+                    "this document",
+                    "that document",
+                    "this file",
+                    "that file",
+                    "this summary",
+                    "that summary",
+                }
+            ):
                 raise ValueError("memory request is too broad")
             if action == "remember":
                 await self._memory_service.remember(owner, content)
