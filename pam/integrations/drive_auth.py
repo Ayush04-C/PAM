@@ -11,7 +11,7 @@ from google.auth.transport.requests import AuthorizedSession, Request
 from google.oauth2.credentials import Credentials
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from pam.conversation.models import DriveConsent
+from pam.conversation.models import DriveConsent, DriveConsentRequired
 from pam.integrations.google_calendar import (
     GOOGLE_TOKEN_URI,
     GoogleOAuthClient,
@@ -147,6 +147,24 @@ class DriveAuthorization:
     def check_connection(self) -> None:
         """Explicit operator-triggered refresh and account check, with no file reads."""
         grant = self.load()
+        credentials = self._refresh_credentials(grant)
+        if self._account(credentials) != (
+            grant.account_email.casefold(),
+            grant.account_id,
+        ):
+            raise DriveAuthorizationError("Drive account changed. Reconnect Drive.")
+
+    def read_credentials(self, owner: MemoryOwnerId) -> Credentials:
+        """Check the current owner and saved read consent before any network I/O."""
+        if owner != self.owner:
+            raise DriveConsentRequired("Drive read consent is required.")
+        grant = self.load()
+        if grant.allow_read is not True:
+            raise DriveConsentRequired("Drive read consent is required.")
+        return self._refresh_credentials(grant)
+
+    def _refresh_credentials(self, grant: DriveGrant) -> Credentials:
+        """Share scoped, bounded refresh between provisioning and metadata reads."""
         credentials = Credentials(
             token=None,
             refresh_token=grant.refresh_token.get_secret_value(),
@@ -167,11 +185,7 @@ class DriveAuthorization:
             credentials.granted_scopes
         ) != set(DRIVE_SCOPES):
             raise DriveAuthorizationError("Drive permissions changed. Reconnect Drive.")
-        if self._account(credentials) != (
-            grant.account_email.casefold(),
-            grant.account_id,
-        ):
-            raise DriveAuthorizationError("Drive account changed. Reconnect Drive.")
+        return credentials
 
     def set_permissions(
         self,
