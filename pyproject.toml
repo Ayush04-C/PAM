@@ -62,5 +62,5 @@ module = ["google_auth_oauthlib.*", "googleapiclient.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["pam.integrations.google_calendar"]
+module = ["pam.integrations.google_calendar", "pam.integrations.drive_auth"]
 disable_error_code = ["import-untyped", "no-untyped-call"]
