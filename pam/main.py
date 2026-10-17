@@ -18,17 +18,14 @@ from pam.api.google_oauth import InMemoryOAuthStateStore, create_google_oauth_ro
 from pam.application import AvailabilityService
 from pam.application.local_calendar import create_local_availability_service
 from pam.config import Settings
-from pam.conversation.factory import configured_model_destination
-from pam.integrations.drive_auth import DriveAuthorization
-from pam.integrations.google_calendar import GoogleOAuthClient, GoogleOAuthConfig
+from pam.integrations.google_calendar import GoogleOAuthClient
 from pam.integrations.google_wiring import (
+    create_drive_authorization,
     create_google_availability_service,
     credential_store,
     google_oauth_config,
 )
 from pam.logging import configure_logging, request_id_context
-from pam.memory.models import MemoryOwnerId
-from pam.security.credentials import EncryptedFileCredentialStore
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -88,26 +85,8 @@ def create_app(
         create_google_oauth_router(oauth_client, InMemoryOAuthStateStore(), oauth_store)
     )
     if active_settings.drive_enabled:
-        assert active_settings.drive_google_client_id is not None
-        assert active_settings.drive_google_client_secret is not None
-        assert active_settings.drive_google_account_email is not None
-        assert active_settings.drive_owner_id is not None
-        assert active_settings.credential_encryption_key is not None
         assert active_settings.app_secret is not None
-        authorization = DriveAuthorization(
-            GoogleOAuthConfig(
-                active_settings.drive_google_client_id,
-                active_settings.drive_google_client_secret.get_secret_value(),
-                active_settings.drive_google_redirect_uri,
-            ),
-            EncryptedFileCredentialStore(
-                active_settings.drive_credential_storage_path,
-                active_settings.credential_encryption_key.get_secret_value(),
-            ),
-            owner=MemoryOwnerId(active_settings.drive_owner_id),
-            account_email=active_settings.drive_google_account_email,
-            model_destination=configured_model_destination(active_settings),
-        )
+        authorization = create_drive_authorization(active_settings)
         app.include_router(
             create_drive_oauth_router(
                 authorization, active_settings.app_secret.get_secret_value()
