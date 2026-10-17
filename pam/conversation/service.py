@@ -1,4 +1,4 @@
-"""Bounded, consent-gated orchestration of Calendar and Drive metadata tools."""
+"""Bounded, consent-gated orchestration of Calendar and Drive read tools."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any
 
 from pam.conversation.file_context import FileReferences, google_file_ids, selection
 from pam.conversation.mcp_client import (
+    DRIVE_CONTENT_TOOL,
     DRIVE_TOOLS,
     CalendarMcpClient,
     DriveMcpClient,
@@ -68,12 +69,14 @@ class ConversationService:
         drive_max_context_chars: int = 20_000,
         drive_mcp: DriveMcpClient | None = None,
         drive_consent_loader: Callable[[MemoryOwnerId], DriveConsent] | None = None,
+        drive_content_enabled: bool = False,
     ) -> None:
         if not 1 <= drive_max_context_chars <= 20_000:
             raise ValueError("Drive context limit must be between 1 and 20000")
         self._drive_max_context_chars = drive_max_context_chars
         self._drive_mcp = drive_mcp
         self._drive_consent_loader = drive_consent_loader
+        self._drive_content_enabled = drive_content_enabled
         self._provider = provider
         self._calendar_mcp = calendar_mcp
         self._clock = clock or (lambda: datetime.now(DISPLAY_TIMEZONE))
@@ -131,9 +134,13 @@ class ConversationService:
             text += (
                 " Drive metadata search is enabled for your owner: try Find PAM TEST, "
                 "then Show metadata for file 2, or Ask for the next page. "
-                "Drive contents cannot be read yet. "
+                "Content reading requires separate permission. "
                 "Calendar and Drive can be used together."
             )
+            if self._drive_content_enabled and self._authorize(owner, None, "content"):
+                text += (
+                    " Google Docs and UTF-8 text summaries with passages are enabled."
+                )
         return text
 
     async def _respond_in_session(
@@ -193,6 +200,14 @@ class ConversationService:
                     tool
                     for tool in await self._drive_mcp.discover_tools()
                     if tool.name in DRIVE_TOOLS
+                    and (
+                        tool.name != DRIVE_CONTENT_TOOL
+                        or (
+                            self._drive_content_enabled
+                            and self._authorize(owner, drive_consent, "content")
+                            is not None
+                        )
+                    )
                 )
         drive_offered = any(tool.name in DRIVE_TOOLS for tool in tools)
         # A tool-eligible request can include private filenames before retrieval.
@@ -234,8 +249,20 @@ class ConversationService:
             if not self._permissions_match(owner, drive_consent, required):
                 return self._partial_answer(turn, _CONSENT_FAILURE)
             if decision.text is not None:
+                content_attempts = [
+                    e for e in turn.tool_exchanges if e.call.name == DRIVE_CONTENT_TOOL
+                ]
+                if content_attempts and all(
+                    e.result.result.get("error") is not None for e in content_attempts
+                ):
+                    return self._partial_answer(
+                        turn,
+                        "File content could not be read. "
+                        "Check its format, size, permissions or connection.",
+                    )
                 if selected is not None and not any(
-                    exchange.call.name == "drive_get_file_metadata"
+                    exchange.call.name
+                    in {"drive_get_file_metadata", DRIVE_CONTENT_TOOL}
                     and exchange.call.arguments.get("file_id") == selected
                     and exchange.result.result.get("error") is None
                     for exchange in turn.tool_exchanges
@@ -248,6 +275,17 @@ class ConversationService:
                 boundary = next((b for b in required if b.kind == "content"), None)
                 boundary = boundary or next(iter(required), None)
                 answer = decision.text
+                citation_sources = self._content_sources(turn, answer)
+                if citation_sources is None:
+                    return self._partial_answer(
+                        turn,
+                        "I couldn't verify the summary's source passages. "
+                        "Please retry.",
+                    )
+                if citation_sources:
+                    answer += "\n\nVerified content sources:\n" + "\n".join(
+                        citation_sources
+                    )
                 if reference_updated and references is not None:
                     answer += "\n\n" + references.display()
                 return await self._complete_turn(
@@ -274,24 +312,38 @@ class ConversationService:
                 return self._partial_answer(
                     turn, "The model repeated a tool-call identifier. Please retry."
                 )
-            if call.name != _ALLOWED_TOOL and call.name not in DRIVE_TOOLS:
+            if (call.name != _ALLOWED_TOOL and call.name not in DRIVE_TOOLS) or (
+                call.name == DRIVE_CONTENT_TOOL and not self._drive_content_enabled
+            ):
                 return self._partial_answer(
                     turn,
                     "Calendar and Drive are read-only; only availability and "
+                    "approved file reads are supported."
+                    if self._drive_content_enabled and drive_offered
+                    else "Calendar and Drive are read-only; only availability and "
                     "file metadata are supported."
                     if drive_offered
                     else _READ_ONLY,
                 )
             is_drive = call.name in DRIVE_TOOLS
             if is_drive:
-                permission = self._authorize(owner, drive_consent, "metadata")
-                if permission is None or not drive_offered or self._drive_mcp is None:
+                is_content = call.name == DRIVE_CONTENT_TOOL
+                permission = self._authorize(
+                    owner, drive_consent, "content" if is_content else "metadata"
+                )
+                offered_names = {tool.name for tool in turn.tools}
+                if (
+                    permission is None
+                    or call.name not in offered_names
+                    or not drive_offered
+                    or self._drive_mcp is None
+                ):
                     return self._partial_answer(turn, _CONSENT_FAILURE)
                 required.append(permission)
                 if not self._reference_allowed(
                     turn, call.name, dict(call.arguments), references, selected
                 ):
-                    result = self._drive_error("invalid_request")
+                    result = self._drive_error("invalid_request", content=is_content)
                 else:
                     if self._on_tool_invoked is not None:
                         self._on_tool_invoked(call.name)
@@ -302,7 +354,9 @@ class ConversationService:
                             )
                         )
                     except Exception:
-                        result = self._drive_error("temporary_failure")
+                        result = self._drive_error(
+                            "temporary_failure", content=is_content
+                        )
                 drive_chars += len(
                     json.dumps(
                         {"arguments": dict(call.arguments), "result": result},
@@ -312,12 +366,17 @@ class ConversationService:
                 if drive_chars > self._drive_max_context_chars:
                     return self._partial_answer(
                         turn,
-                        "Drive metadata exceeds the configured context limit. "
+                        "Drive data exceeds the configured context limit. "
                         "Request fewer files.",
                     )
                 previous_references = references
                 references = FileReferences.from_result(
-                    references, permission, call.name, dict(call.arguments), result, now
+                    references,
+                    replace(permission, kind="metadata"),
+                    call.name,
+                    dict(call.arguments),
+                    result,
+                    now,
                 )
                 reference_updated = (
                     reference_updated
@@ -416,7 +475,7 @@ class ConversationService:
         references: FileReferences | None = None,
         selected: str | None = None,
     ) -> bool:
-        if name == "drive_get_file_metadata":
+        if name in {"drive_get_file_metadata", DRIVE_CONTENT_TOOL}:
             identifier = arguments.get("file_id")
             if not isinstance(identifier, str) or not re.fullmatch(
                 r"[A-Za-z0-9_-]{1,256}", identifier
@@ -466,8 +525,8 @@ class ConversationService:
         )
 
     @staticmethod
-    def _drive_error(code: str) -> dict[str, Any]:
-        return {
+    def _drive_error(code: str, *, content: bool = False) -> dict[str, Any]:
+        result: dict[str, Any] = {
             "source": "google_drive",
             "data_kind": "metadata",
             "untrusted": True,
@@ -476,11 +535,46 @@ class ConversationService:
             "incomplete_search": False,
             "error": {
                 "code": code,
-                "message": "Drive metadata request failed safely. "
+                "message": "Drive read request failed safely. "
                 "Check the request or reconnect.",
                 "retryable": code == "temporary_failure",
             },
         }
+        if content:
+            result.update(data_kind="content", passages=[], complete=True)
+            result.pop("next_page_token")
+            result.pop("incomplete_search")
+        return result
+
+    @staticmethod
+    def _content_sources(turn: ModelTurn, answer: str) -> list[str] | None:
+        """Validate citation identities, not the semantic truth of a summary."""
+        sources: dict[str, str] = {}
+        citations: set[str] = set()
+        for exchange in turn.tool_exchanges:
+            if (
+                exchange.call.name != DRIVE_CONTENT_TOOL
+                or exchange.result.result.get("error") is not None
+            ):
+                continue
+            result = exchange.result.result
+            for file in result.get("files", []):
+                sources[file["file_id"]] = file["source_url"]
+                citations.update(
+                    f"[{file['file_id']}:{p['label']}]"
+                    for p in result.get("passages", [])
+                )
+        if not sources:
+            return []
+        used = re.findall(r"\[[^\]\n]{1,256}:P[^\]\n]{1,20}\]|\[P\d+\]", answer)
+        links = re.findall(r"https?://[^\s<>]+", answer)
+        if (
+            not used
+            or any(c not in citations for c in used)
+            or any(link.rstrip(").,") not in sources.values() for link in links)
+        ):
+            return None
+        return [f"{identifier}: {url}" for identifier, url in sources.items()]
 
     @staticmethod
     def _partial_answer(turn: ModelTurn, reason: str) -> str:
