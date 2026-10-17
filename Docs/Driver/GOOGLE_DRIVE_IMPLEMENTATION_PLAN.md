@@ -11,11 +11,14 @@ validation, consent, Calendar behavior and credential safety. The original audit
 and detailed roadmap below remain reference material; obsolete topology and
 subprocess-isolation assumptions must not be implemented as requirements.
 
-Status: staged implementation underway; Drive OAuth is implemented for local
-provisioning, with live acceptance pending. Drive file tools are not implemented.
+Status: Drive OAuth and a bounded metadata adapter are implemented. A live search
+and metadata lookup of the designated test file passed. Drive MCP tools and
+assistant routing are not implemented.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
-Current stage: [Stage 4 authorization and Google Cloud setup](STAGE_04_AUTHORIZATION.md).
+Current stage: [Stage 5 bounded search and metadata](STAGE_05_METADATA.md).
+The [Stage 4 authorization](STAGE_04_AUTHORIZATION.md) is implemented; its
+shared refresh helper is exercised by the live metadata check.
 The [Stage 3 configuration and offline status](STAGE_03_CONFIGURATION.md) is complete.
 The [Stage 2 consent and LLM boundaries](STAGE_02_CONSENT.md) remain enforced.
 The [Stage 1 integration boundaries](STAGE_01_BOUNDARIES.md) remain the layout contract.
