@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     google_redirect_uri: str | None = None
     credential_encryption_key: SecretStr | None = None
     credential_storage_path: Path = Path(".pam-google-credentials.bin")
+    drive_credential_storage_path: Path = Path(".pam-drive-credentials.bin")
+    drive_max_context_chars: int = Field(default=20_000, ge=1, le=20_000)
     model_provider: Literal["fake", "gemini", "bharatcode"] = "fake"
     memory_backend: Literal["disabled", "supermemory"] = "disabled"
     supermemory_api_key: SecretStr | None = None
@@ -61,6 +63,15 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def require_production_secret(self) -> Settings:
         """Require a secret only when running in production."""
+        try:
+            same_credentials = (
+                self.credential_storage_path.resolve()
+                == self.drive_credential_storage_path.resolve()
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ValueError("Credential storage paths must be resolvable") from error
+        if same_credentials:
+            raise ValueError("Drive and Calendar credential storage paths must differ")
         if self.environment == "production" and self.app_secret is None:
             raise ValueError("PAM_APP_SECRET is required in production")
         if self.calendar_backend == "google":
