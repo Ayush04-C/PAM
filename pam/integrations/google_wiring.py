@@ -33,6 +33,7 @@ def create_drive_authorization(settings: Settings) -> DriveAuthorization:
         owner=MemoryOwnerId(settings.drive_owner_id),
         account_email=settings.drive_google_account_email,
         model_destination=configured_model_destination(settings),
+        content_enabled=settings.drive_content_enabled,
     )
 
 
