@@ -37,6 +37,7 @@ def create_model_provider(settings: Settings) -> ModelProvider:
             settings.bharatcode_api_key.get_secret_value(),
             settings.bharatcode_model,
             settings.bharatcode_base_url,
+            timeout_seconds=settings.bharatcode_timeout_seconds,
         )
     if settings.model_provider == "gemini":
         if settings.gemini_api_key is None:

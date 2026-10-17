@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     bharatcode_api_key: SecretStr | None = None
     bharatcode_base_url: str = "https://bharatcode.ai/api/model/v1"
     bharatcode_model: str = "deepseek-v4.1-flash"
+    bharatcode_timeout_seconds: float = Field(default=30.0, ge=5, le=180)
     conversation_debug_tool_calls: bool = False
     conversation_max_history_messages: int = 20
     conversation_max_sessions: int = 100
