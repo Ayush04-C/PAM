@@ -14,7 +14,8 @@ subprocess-isolation assumptions must not be implemented as requirements.
 Status: planning proposal for architecture review; no feature implemented.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
-Current stage: [Stage 1 integration boundaries](STAGE_01_BOUNDARIES.md).
+Current stage: [Stage 2 consent and LLM boundaries](STAGE_02_CONSENT.md).
+The [Stage 1 integration boundaries](STAGE_01_BOUNDARIES.md) remain the layout contract.
 Drive documentation now lives together in `Docs/Driver`; tests remain in `pam/tests`.
 
 Review companion added 2026-10-16: [proposed workflow and architecture diagrams](GOOGLE_DRIVE_ARCHITECTURE.md).

@@ -12,7 +12,7 @@ The revised design below supersedes the earlier independent-server proposal.
 | --- | --- | --- |
 | Calendar | Existing `pam/mcp/calendar.py` and Calendar services | Keep availability math, validation, tool schema and deterministic presentation intact. |
 | Drive | Proposed `pam/mcp/driver.py` | Define validated read-only Drive tools, reusing existing suitable functions. Add a Drive API adapter only where new behavior is needed. |
-| Shared MCP server | Existing `pam/mcp/server.py` | Register Calendar and optionally Drive tools in one server and entry point. Calendar must still work when Drive is disabled or its setup fails. |
+| Shared MCP server | Existing `pam/mcp/server.py` | Register both tool families once implemented. Invoke only the authorized tools needed for a request; neither capability requires the other's credentials. |
 | Shared infrastructure | Existing settings, logging, encryption, Google and MCP helpers | Extend or import existing code where its semantics fit; extract a helper only when necessary. No forced parallel infrastructure. |
 | Conversation/composition | Existing `pam/conversation`, CLI and Telegram composition | Later dispatch approved tool names and combine results. MCP adapters do not call providers, Telegram or durable memory themselves. |
 
@@ -38,7 +38,9 @@ to their capability; an outage of the shared MCP transport can affect both.
 
 [`test_integration_boundaries.py`](../../pam/tests/test_integration_boundaries.py)
 checks ordinary Python imports in the real source tree. It rejects MCP adapters →
-conversation/model-provider, Telegram or memory, and Calendar domain → MCP adapters.
+conversation orchestration/model-provider, Telegram or memory, and Calendar domain
+→ MCP adapters. Plain shared values from `pam.conversation.models`, including the
+consent types, remain reusable by adapters.
 It explicitly allows the shared server to import both adapters and allows Drive
 to reuse existing Calendar-file helpers. Whether a helper's behavior is suitable
 must be reviewed and tested at the reuse site; file location alone is not a ban.
@@ -87,6 +89,8 @@ because its loopback socket restriction stalled event-loop setup. No tests were
 skipped or application code changed to work around that restriction.
 
 ## Next: Stage 2, consent and LLM boundaries
+
+See the implemented [Stage 2 boundary and its limits](STAGE_02_CONSENT.md).
 
 Before live Drive data reaches the configured model, approve its actual local or
 hosted deployment, permitted data transfer, read-only capabilities, retention,

@@ -36,6 +36,7 @@ environment.
 | Verification and incident runbooks | [TESTING_AND_OPERATIONS.md](TESTING_AND_OPERATIONS.md) |
 | Proposed future phases | [ROADMAP.md](ROADMAP.md) |
 | Drive Stage 1 boundaries and tests | [Driver/STAGE_01_BOUNDARIES.md](Driver/STAGE_01_BOUNDARIES.md) |
+| Drive Stage 2 consent and LLM boundaries | [Driver/STAGE_02_CONSENT.md](Driver/STAGE_02_CONSENT.md) |
 | Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](Driver/GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
 | Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](Driver/GOOGLE_DRIVE_ARCHITECTURE.md) |
 | Availability presentation contract | [AVAILABILITY_PRESENTATION.md](AVAILABILITY_PRESENTATION.md) |
