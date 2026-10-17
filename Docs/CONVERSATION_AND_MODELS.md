@@ -10,6 +10,12 @@ For an ordinary non-empty message the service builds a provider-neutral turn wit
 
 ## Provider abstraction
 
+CLI and Telegram construct dependencies through `create_conversation_service`.
+Stage 8 stores at most 50 verified file choices per session for 30 minutes, with
+query-bound continuation tokens, owner/grant/destination checks, numbered
+clarification and fresh metadata lookup for selected files. `/new` also clears
+these choices. See [Stage 8](Driver/STAGE_08_REFERENCES_AND_MEMORY.md).
+
 The `ModelProvider` protocol has `respond` and `respond_after_tool` methods. `BharatCodeProvider` uses an OpenAI-compatible API; `GeminiProvider` uses the Google Gen AI SDK. Provider selection is configured with `PAM_MODEL_PROVIDER` (`bharatcode` or `gemini`), and the factory selects one provider—there is no automatic cross-provider fallback. A scripted provider is used in offline tests, not as a normal interactive CLI provider.
 
 Provider exceptions are normalized to an assistant-facing unavailable message. PAM does not reveal SDK responses, API keys, requests, or tool internals in that message.
