@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     drive_credential_storage_path: Path = Path(".pam-drive-credentials.bin")
     drive_max_context_chars: int = Field(default=20_000, ge=1, le=20_000)
     drive_enabled: bool = False
+    drive_content_enabled: bool = False
     drive_google_client_id: str | None = None
     drive_google_client_secret: SecretStr | None = None
     drive_google_redirect_uri: str = "http://127.0.0.1:8000/oauth/google/drive/callback"
