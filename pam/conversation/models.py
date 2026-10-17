@@ -107,6 +107,14 @@ class ToolResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolExchange:
+    """Ephemeral sequential transcript, never committed as durable history."""
+
+    call: ToolCall = field(repr=False)
+    result: ToolResult = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class ConversationMessage:
     """Portable private conversational context retained between successful turns."""
 
@@ -126,6 +134,7 @@ class ModelTurn:
     history: tuple[ConversationMessage, ...] = ()
     memories: tuple[RecalledMemory, ...] = ()
     drive_context: DriveContext | None = None
+    tool_exchanges: tuple[ToolExchange, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True, slots=True)
