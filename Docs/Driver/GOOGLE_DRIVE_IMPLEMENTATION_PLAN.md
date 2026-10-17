@@ -16,7 +16,10 @@ assistant routing are implemented. Direct MCP live acceptance passed. Hosted-mod
 metadata conversation acceptance is pending explicit saved transfer consent.
 Audit date: 2026-10-10. Repository baseline: `77a2ebf`.
 
-Current stage: [Stage 7 assistant routing](STAGE_07_ROUTING.md).
+Current stage: [Stage 8 references and memory boundaries](STAGE_08_REFERENCES_AND_MEMORY.md).
+The [Stage 7 assistant routing](STAGE_07_ROUTING.md) is complete and reused.
+Stage 8 adds temporary references and shared transport composition; it does not
+authorize Drive persistence in Supermemory. Supported content reads are Stage 9.
 The [Stage 6 shared MCP tools](STAGE_06_MCP_TOOLS.md) are complete and reused.
 The [Stage 5 metadata adapter](STAGE_05_METADATA.md) is complete and reused by MCP.
 The [Stage 4 authorization](STAGE_04_AUTHORIZATION.md) is implemented; its
