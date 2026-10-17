@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import secrets
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -28,17 +30,31 @@ class OAuthStateStore(Protocol):
 class InMemoryOAuthStateStore:
     """Local process-only one-time OAuth state storage."""
 
-    _states: dict[str, str] = field(default_factory=dict)
+    ttl_seconds: float = 600
+    capacity: int = 32
+    clock: Callable[[], float] = time.monotonic
+    _states: dict[str, tuple[str, float]] = field(default_factory=dict)
 
     def create(self, code_verifier: str) -> str:
         state = secrets.token_urlsafe(32)
-        self._states[state] = code_verifier
+        now = self.clock()
+        self._states = {
+            key: item for key, item in self._states.items() if item[1] > now
+        }
+        if len(self._states) >= self.capacity:
+            raise ValueError("Too many pending OAuth requests")
+        self._states[state] = (code_verifier, now + self.ttl_seconds)
         return state
 
     def consume(self, state: str | None) -> str | None:
         if state is None:
             return None
-        return self._states.pop(state, None)
+        item = self._states.pop(state, None)
+        return item[0] if item is not None and item[1] > self.clock() else None
+
+    def clear(self) -> None:
+        """Invalidate pending authorization attempts on local disconnect."""
+        self._states.clear()
 
 
 def create_google_oauth_router(
@@ -54,7 +70,10 @@ def create_google_oauth_router(
         """Begin a local Google read-only authorization flow."""
         client = _configured_client(oauth_client)
         code_verifier = secrets.token_urlsafe(64)
-        state = state_store.create(code_verifier)
+        try:
+            state = state_store.create(code_verifier)
+        except ValueError:
+            raise HTTPException(503, "Too many pending OAuth requests") from None
         return RedirectResponse(client.authorization_url(state, code_verifier))
 
     @router.get("/oauth/google/callback")
