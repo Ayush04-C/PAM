@@ -35,27 +35,33 @@ class GeminiProvider:
         response = await self._generate(
             [
                 *self._initial_contents(turn),
-                types.Content(
-                    role="model",
-                    parts=[
-                        types.Part.from_function_call(
-                            name=tool_call.name, args=dict(tool_call.arguments)
-                        )
-                    ],
-                ),
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_function_response(
-                            name=tool_call.name,
-                            response=dict(tool_result.result),
-                        )
-                    ],
-                ),
+                *self._tool_contents(tool_call, tool_result),
             ],
             turn,
         )
         return self._decision_from_response(response)
+
+    @staticmethod
+    def _tool_contents(tool_call: ToolCall, tool_result: ToolResult) -> list[object]:
+        return [
+            types.Content(
+                role="model",
+                parts=[
+                    types.Part.from_function_call(
+                        name=tool_call.name, args=dict(tool_call.arguments)
+                    )
+                ],
+            ),
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_function_response(
+                        name=tool_call.name,
+                        response=dict(tool_result.result),
+                    )
+                ],
+            ),
+        ]
 
     async def _generate(self, contents: list[object], turn: ModelTurn) -> object:
         declarations = [
@@ -122,12 +128,21 @@ class GeminiProvider:
                 for message in turn.history
             ],
             turn.user_message,
+            *[
+                content
+                for exchange in turn.tool_exchanges
+                for content in GeminiProvider._tool_contents(
+                    exchange.call, exchange.result
+                )
+            ],
         ]
 
     @staticmethod
     def _decision_from_response(response: object) -> ModelDecision:
         function_calls = getattr(response, "function_calls", None)
         if function_calls:
+            if len(function_calls) != 1:
+                raise ModelUnavailable("parallel tool calls are not supported")
             call = function_calls[0]
             name = getattr(call, "name", None)
             arguments = getattr(call, "args", None)
