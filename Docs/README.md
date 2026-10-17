@@ -44,6 +44,7 @@ environment.
 | Drive Stage 7 consent-gated assistant routing | [Driver/STAGE_07_ROUTING.md](Driver/STAGE_07_ROUTING.md) |
 | Drive Stage 8 file references and shared-memory boundaries | [Driver/STAGE_08_REFERENCES_AND_MEMORY.md](Driver/STAGE_08_REFERENCES_AND_MEMORY.md) |
 | Drive Stage 9 supported content and cited summaries | [Driver/STAGE_09_CONTENT.md](Driver/STAGE_09_CONTENT.md) |
+| Drive Stage 10 live acceptance checkpoint | [Driver/STAGE_10_ACCEPTANCE.md](Driver/STAGE_10_ACCEPTANCE.md) |
 | Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](Driver/GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
 | Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](Driver/GOOGLE_DRIVE_ARCHITECTURE.md) |
 | Availability presentation contract | [AVAILABILITY_PRESENTATION.md](AVAILABILITY_PRESENTATION.md) |
