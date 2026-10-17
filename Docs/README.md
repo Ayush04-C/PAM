@@ -29,7 +29,7 @@ environment.
 | System layout, trust, request flows | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Conversation orchestration and model providers | [CONVERSATION_AND_MODELS.md](CONVERSATION_AND_MODELS.md) |
 | Google OAuth and Calendar reads | [GOOGLE_CALENDAR_INTEGRATION.md](GOOGLE_CALENDAR_INTEGRATION.md) |
-| Private Calendar MCP server/client | [MCP_INTEGRATION.md](MCP_INTEGRATION.md) |
+| Shared Calendar/Drive MCP server and Calendar client | [MCP_INTEGRATION.md](MCP_INTEGRATION.md) |
 | Supermemory durable memory | [MEMORY_INTEGRATION.md](MEMORY_INTEGRATION.md) |
 | Telegram polling adapter | [TELEGRAM_INTEGRATION.md](TELEGRAM_INTEGRATION.md) |
 | Azure/PM2 deployment | [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) |
@@ -40,6 +40,7 @@ environment.
 | Drive Stage 3 configuration and offline status | [Driver/STAGE_03_CONFIGURATION.md](Driver/STAGE_03_CONFIGURATION.md) |
 | Drive Stage 4 authorization and Google Cloud setup | [Driver/STAGE_04_AUTHORIZATION.md](Driver/STAGE_04_AUTHORIZATION.md) |
 | Drive Stage 5 bounded search and metadata | [Driver/STAGE_05_METADATA.md](Driver/STAGE_05_METADATA.md) |
+| Drive Stage 6 MCP tools and terminal testing | [Driver/STAGE_06_MCP_TOOLS.md](Driver/STAGE_06_MCP_TOOLS.md) |
 | Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](Driver/GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
 | Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](Driver/GOOGLE_DRIVE_ARCHITECTURE.md) |
 | Availability presentation contract | [AVAILABILITY_PRESENTATION.md](AVAILABILITY_PRESENTATION.md) |
