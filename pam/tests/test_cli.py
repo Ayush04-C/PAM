@@ -49,7 +49,7 @@ def test_status_is_offline_and_exposes_only_approved_fields(monkeypatch, capsys)
         "Model configuration: present\n"
         "Calendar backend: fake\n"
         "Drive tools: disabled\n"
-        "Drive model-transfer consent: not collected by CLI\n"
+        "Drive model-transfer consent: managed by local provisioning\n"
         "Drive context limit: 500 characters\n"
         "Live connectivity: not checked\n"
     )

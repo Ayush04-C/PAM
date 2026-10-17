@@ -1,4 +1,4 @@
-"""Local manual conversation CLI for Phase 6."""
+"""Local conversation CLI with consent-gated Calendar and Drive metadata routing."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pydantic_settings import SettingsError
 
 from pam.config import Settings
 from pam.conversation.factory import create_model_provider
-from pam.conversation.mcp_client import local_client_from_server
+from pam.conversation.mcp_client import local_client_from_server, local_drive_support
 from pam.conversation.service import ConversationService
 from pam.conversation.store import InMemoryConversationStore
 from pam.mcp.server import create_mcp_server
@@ -30,11 +30,12 @@ def format_status(settings: Settings) -> str:
             f"Model configuration: {model_configuration}",
             f"Calendar backend: {settings.calendar_backend}",
             (
-                "Drive tools: available through direct MCP diagnostics"
+                "Drive tools: consent-gated conversation routing "
+                "and direct MCP diagnostics"
                 if settings.drive_enabled
                 else "Drive tools: disabled"
             ),
-            "Drive model-transfer consent: not collected by CLI",
+            "Drive model-transfer consent: managed by local provisioning",
             f"Drive context limit: {settings.drive_max_context_chars} characters",
             "Live connectivity: not checked",
         )
@@ -50,9 +51,13 @@ async def run(settings: Settings | None = None) -> None:
         print("Configure PAM_MODEL_PROVIDER and its matching API key to use the CLI.")
         return
     tool_debugger = print if settings.conversation_debug_tool_calls else None
+    server = create_mcp_server(settings)
+    drive_mcp, consent_loader = local_drive_support(server, settings)
     service = ConversationService(
         provider,
-        local_client_from_server(create_mcp_server(settings)),
+        local_client_from_server(server),
+        drive_mcp=drive_mcp,
+        drive_consent_loader=consent_loader,
         conversation_store=InMemoryConversationStore(
             settings.conversation_max_history_messages,
             settings.conversation_max_sessions,
