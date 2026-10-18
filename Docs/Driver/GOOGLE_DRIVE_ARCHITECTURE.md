@@ -1,5 +1,14 @@
 # Proposed Google Drive MCP workflow and architecture
 
+**Historical diagrams:** the independent-server layout below and the linked
+FigJam board predate the 2026-10-17 architecture revision. The current design uses
+one `pam/mcp/server.py`, existing `calendar.py` and proposed `driver.py`, with
+shared helpers where useful. See the authoritative
+[Stage 1 boundaries](STAGE_01_BOUNDARIES.md). Do not implement the separate Drive
+package/process or multi-server registry depicted here. User-level retrieval,
+consent and validation requirements remain applicable; refreshed diagrams are
+deferred until the layout is reviewed.
+
 Status: review draft, generated 2026-10-16 from the
 [implementation plan](GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md), audited repository
 baseline `77a2ebf`. Drive integration is not implemented. These diagrams make the

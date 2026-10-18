@@ -2,11 +2,11 @@
 
 ## Current architecture
 
-PAM embeds a private local Model Context Protocol server, launched as `python -m pam.mcp.server`. `CalendarMcpClient` starts that process using standard input/output transport. The conversation factory uses this local launch configuration; the MCP server constructs the same Google or fake availability backend selected by PAM settings. It is not a public HTTP service and it does not expose arbitrary Google Calendar capabilities.
+PAM embeds a private shared Model Context Protocol server, launched as `python -m pam.mcp.server` for stdio clients. The current conversation CLI and Telegram composition instead use the MCP SDK with an injected server instance; their narrow Calendar client does not spawn a subprocess. The server constructs the Google or fake Calendar backend selected by PAM settings. With Drive enabled, it also registers the metadata tools described in [Stage 6](Driver/STAGE_06_MCP_TOOLS.md). It is not a public HTTP service.
 
 ## Exposed tool
 
-The server exposes exactly one structured, read-only tool: `get_weekly_availability`.
+The Calendar capability exposes `get_weekly_availability`. The shared server also exposes `drive_search_files` and `drive_get_file_metadata` when `PAM_DRIVE_ENABLED=true`. Stage 7's separate Drive conversation client offers those tools only after current owner/read/metadata-transfer/destination checks. This section describes the Calendar contract; see [Stage 7 routing](Driver/STAGE_07_ROUTING.md) for combined operation.
 
 | Input | Required | Rules |
 | --- | --- | --- |
@@ -19,9 +19,14 @@ The result is an object with `availability` (human-readable text) and `presentat
 
 ## Client orchestration and restrictions
 
-`ConversationService` discovers available tools for the model turn. A model tool request is accepted only when its name is exactly `get_weekly_availability`; every other name receives the read-only refusal. The loop allows at most two tool rounds. Tool or MCP failure produces a safe assistant-facing failure rather than an internal exception.
+`ConversationService` discovers Calendar and, with matching current consent, the two Drive metadata tools. It validates names/arguments and preserves sequential call/result transcripts. Calendar retains its two-call limit; Drive-eligible turns have six total calls with at most two Calendar calls. Tool or MCP failure produces safe errors and, where available, verified partial results.
 
-The MCP declaration marks the tool as read-only and non-destructive. No create, update, delete, authorization, shell, file, or generic network tools are offered. This is enforced independently by the server schema and the conversation allowlist.
+The MCP declaration marks tools as read-only and non-destructive. There are no
+write, authorization, shell or generic network tools. With
+`PAM_DRIVE_CONTENT_ENABLED=true`, `drive_get_file_content` adds bounded Google
+Docs/plain-text reads. Its server checks the content scope/read boundary; the
+conversation checks separate content-transfer consent before model delivery.
+The separate Calendar client remains narrow. See [Stage 9](Driver/STAGE_09_CONTENT.md).
 
 ## Error handling and timeouts
 
@@ -35,6 +40,6 @@ Offline tests cover the server tool schema, malformed input rejection, Calendar-
 
 ## Current versus proposed
 
-**Implemented:** one private stdio Calendar MCP server and one read-only availability tool, used internally by PAM.
+**Implemented:** one private shared Calendar/Drive MCP server, used through injected SDK or stdio clients, with direct terminal diagnostics. See [Stage 6 CLI instructions](Driver/STAGE_06_MCP_TOOLS.md#cli-calendar-conversation-and-direct-mcp-diagnostics).
 
 **Not implemented:** a remote/public MCP deployment, cross-service discovery, multiple independently deployed servers, or write-capable tools. Those are future architecture work; see [ROADMAP.md](ROADMAP.md).

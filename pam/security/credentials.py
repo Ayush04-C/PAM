@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from contextlib import suppress
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -36,9 +37,23 @@ class EncryptedFileCredentialStore:
         """Encrypt the token before writing it to the private local path."""
         encrypted = self._fernet.encrypt(refresh_token.encode("utf-8"))
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_bytes(encrypted)
-        with suppress(OSError):
-            os.chmod(self._path, 0o600)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".pam-credential-", dir=self._path.parent
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(encrypted)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, self._path)
+        finally:
+            with suppress(OSError):
+                os.unlink(temporary)
+
+    def delete(self) -> None:
+        """Forget this local credential without revoking other Google grants."""
+        self._path.unlink(missing_ok=True)
 
     def load(self) -> str | None:
         """Decrypt the stored token only when a calendar read needs it."""

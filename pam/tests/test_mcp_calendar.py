@@ -171,7 +171,11 @@ async def test_sdk_client_integrates_with_the_injected_fake_calendar_server() ->
 @pytest.mark.asyncio
 async def test_stdio_client_runs_the_configured_fake_calendar_mcp_server() -> None:
     launch_config = local_stdio_launch_config(sys.executable)
-    server_environment = {**os.environ, "PAM_CALENDAR_BACKEND": "fake"}
+    server_environment = {
+        **os.environ,
+        "PAM_CALENDAR_BACKEND": "fake",
+        "PAM_DRIVE_ENABLED": "false",
+    }
     launch = StdioServerParameters(
         command=launch_config.command,
         args=list(launch_config.args),

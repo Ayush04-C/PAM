@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator, model_validator
+from cryptography.fernet import Fernet
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +24,15 @@ class Settings(BaseSettings):
     google_redirect_uri: str | None = None
     credential_encryption_key: SecretStr | None = None
     credential_storage_path: Path = Path(".pam-google-credentials.bin")
+    drive_credential_storage_path: Path = Path(".pam-drive-credentials.bin")
+    drive_max_context_chars: int = Field(default=20_000, ge=1, le=20_000)
+    drive_enabled: bool = False
+    drive_content_enabled: bool = False
+    drive_google_client_id: str | None = None
+    drive_google_client_secret: SecretStr | None = None
+    drive_google_redirect_uri: str = "http://127.0.0.1:8000/oauth/google/drive/callback"
+    drive_google_account_email: str | None = None
+    drive_owner_id: str | None = None
     model_provider: Literal["fake", "gemini", "bharatcode"] = "fake"
     memory_backend: Literal["disabled", "supermemory"] = "disabled"
     supermemory_api_key: SecretStr | None = None
@@ -34,6 +45,7 @@ class Settings(BaseSettings):
     bharatcode_api_key: SecretStr | None = None
     bharatcode_base_url: str = "https://bharatcode.ai/api/model/v1"
     bharatcode_model: str = "deepseek-v4.1-flash"
+    bharatcode_timeout_seconds: float = Field(default=30.0, ge=5, le=180)
     conversation_debug_tool_calls: bool = False
     conversation_max_history_messages: int = 20
     conversation_max_sessions: int = 100
@@ -61,6 +73,54 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def require_production_secret(self) -> Settings:
         """Require a secret only when running in production."""
+        try:
+            same_credentials = (
+                self.credential_storage_path.resolve()
+                == self.drive_credential_storage_path.resolve()
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ValueError("Credential storage paths must be resolvable") from error
+        if same_credentials:
+            raise ValueError("Drive and Calendar credential storage paths must differ")
+        if self.drive_enabled:
+            required = (
+                self.drive_google_client_id,
+                self.drive_google_client_secret,
+                self.drive_google_account_email,
+                self.drive_owner_id,
+                self.credential_encryption_key,
+                self.app_secret,
+            )
+            if any(value is None or not str(value).strip() for value in required):
+                raise ValueError("Drive OAuth and operator configuration is required")
+            assert self.app_secret is not None
+            if len(self.app_secret.get_secret_value()) < 32:
+                raise ValueError(
+                    "Drive provisioning requires an APP_SECRET of 32+ characters"
+                )
+            assert self.drive_google_client_secret is not None
+            if not self.drive_google_client_secret.get_secret_value().strip():
+                raise ValueError("Drive client secret must not be empty")
+            assert self.credential_encryption_key is not None
+            try:
+                Fernet(
+                    self.credential_encryption_key.get_secret_value().encode("ascii")
+                )
+            except (ValueError, UnicodeError):
+                raise ValueError("Drive credential encryption key is invalid") from None
+            redirect = urlsplit(self.drive_google_redirect_uri)
+            if redirect.port is not None and not 1 <= redirect.port <= 65535:
+                raise ValueError("Drive redirect port is invalid")
+            if (
+                redirect.scheme != "http"
+                or redirect.hostname != "127.0.0.1"
+                or redirect.path != "/oauth/google/drive/callback"
+                or redirect.query
+                or redirect.fragment
+                or redirect.username
+                or redirect.password
+            ):
+                raise ValueError("Drive redirect must use the local 127.0.0.1 callback")
         if self.environment == "production" and self.app_secret is None:
             raise ValueError("PAM_APP_SECRET is required in production")
         if self.calendar_backend == "google":

@@ -19,11 +19,24 @@ PAM configures bounded recall with `PAM_MEMORY_MAX_RECALLED_ITEMS` and `PAM_MEMO
 
 ## Trust and retention rules
 
-Recalled content may contain inaccurate or adversarial text. Both model adapters label it as untrusted context, and it cannot add tools, reveal secrets, or override PAM's Calendar-only allowlist. The memory service logs only a hashed owner reference and limited operational metadata, not memory contents.
+Recalled content may contain inaccurate or adversarial text. Both model adapters label it as untrusted context, and it cannot add tools, reveal secrets, or override PAM's Calendar/Drive read allowlists. The memory service logs only a hashed owner reference and limited operational metadata, not memory contents.
 
 Calendar tool results are excluded from passive durable ingestion. This avoids persisting sensitive, time-sensitive live schedules and prevents stale availability from being treated as a user preference. When memory conflicts with live Calendar data, live Calendar data wins for the requested date.
 
 ## Failure policy
+
+Drive uses the same existing backend, without automatic metadata/document
+ingestion. Automatic recall and ingestion are suppressed for Drive-enabled turns
+and sensitive history, including no-tool answers and discovery failures. Temporary
+file choices stay in the bounded conversation store. Explicit Remember remains
+literal user-written content; contextual file-selection requests are rejected.
+`/new` clears temporary context, not durable memories or OAuth grants. See
+[Stage 8](Driver/STAGE_08_REFERENCES_AND_MEMORY.md) for the exact lifecycle and tests.
+
+Stage 9 keeps raw content passages in the ephemeral tool transcript. Cited answers
+may contain quotes and retain content-sensitive provenance in transient history;
+content consent must remain valid for follow-ups. Raw passages are not stored in
+file references, document caches or Supermemory. See [Stage 9](Driver/STAGE_09_CONTENT.md).
 
 * Recall errors are swallowed so normal conversation remains available.
 * Passive-ingestion errors are swallowed after a successful answer is returned.

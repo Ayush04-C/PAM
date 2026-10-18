@@ -17,7 +17,7 @@ from openai import (
 )
 
 from pam.conversation.models import ModelDecision, ModelTurn, ToolCall, ToolResult
-from pam.conversation.provider import ModelUnavailable
+from pam.conversation.provider import ModelTimeout, ModelUnavailable
 
 
 class BharatCodeProvider:
@@ -30,11 +30,13 @@ class BharatCodeProvider:
         base_url: str,
         *,
         client: Any | None = None,
+        timeout_seconds: float = 30.0,
     ) -> None:
         self._client: Any = client or AsyncOpenAI(
-            api_key=api_key, base_url=base_url, max_retries=1, timeout=30.0
+            api_key=api_key, base_url=base_url, max_retries=1, timeout=timeout_seconds
         )
         self._model = model
+        self.data_destination = f"bharatcode:{base_url.rstrip('/')}|{model}"
 
     async def respond(self, turn: ModelTurn) -> ModelDecision:
         completion = await self._create_completion(self._initial_messages(turn), turn)
@@ -48,6 +50,19 @@ class BharatCodeProvider:
             raise ModelUnavailable("model provider returned an invalid tool call")
         messages = [
             *self._initial_messages(turn),
+            *self._tool_messages(tool_call, tool_result),
+        ]
+        completion = await self._create_completion(messages, turn)
+        message = self._message_from_completion(completion)
+        return self._decision_from_message(message)
+
+    @staticmethod
+    def _tool_messages(
+        tool_call: ToolCall, tool_result: ToolResult
+    ) -> list[dict[str, Any]]:
+        if not tool_call.call_id:
+            raise ModelUnavailable("model provider returned an invalid tool call")
+        return [
             {
                 "role": "assistant",
                 "content": None,
@@ -70,9 +85,6 @@ class BharatCodeProvider:
                 "content": json.dumps(dict(tool_result.result), separators=(",", ":")),
             },
         ]
-        completion = await self._create_completion(messages, turn)
-        message = self._message_from_completion(completion)
-        return self._decision_from_message(message)
 
     async def _create_completion(
         self, messages: list[dict[str, Any]], turn: ModelTurn
@@ -94,10 +106,11 @@ class BharatCodeProvider:
                 ],
                 tool_choice="auto",
             )
+        except APITimeoutError:
+            raise ModelTimeout("model provider request timed out") from None
         except (
             APIConnectionError,
             APIError,
-            APITimeoutError,
             AuthenticationError,
             BadRequestError,
             NotFoundError,
@@ -111,6 +124,11 @@ class BharatCodeProvider:
     def _initial_messages(turn: ModelTurn) -> list[dict[str, Any]]:
         return [
             {"role": "system", "content": turn.system_instruction},
+            *(
+                [{"role": "user", "content": turn.drive_context.as_untrusted_text()}]
+                if turn.drive_context is not None
+                else []
+            ),
             *(
                 [
                     {
@@ -128,6 +146,13 @@ class BharatCodeProvider:
                 for message in turn.history
             ],
             {"role": "user", "content": turn.user_message},
+            *[
+                message
+                for exchange in turn.tool_exchanges
+                for message in BharatCodeProvider._tool_messages(
+                    exchange.call, exchange.result
+                )
+            ],
         ]
 
     @staticmethod
@@ -144,6 +169,8 @@ class BharatCodeProvider:
     def _decision_from_message(message: Any) -> ModelDecision:
         tool_calls = getattr(message, "tool_calls", None) or []
         if tool_calls:
+            if len(tool_calls) != 1:
+                raise ModelUnavailable("parallel tool calls are not supported")
             call = tool_calls[0]
             function = getattr(call, "function", None)
             call_id = getattr(call, "id", None)

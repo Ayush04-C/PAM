@@ -45,9 +45,12 @@ class TelegramAdapter:
         self,
         conversation_service: ConversationResponder,
         allowed_user_ids: tuple[int, ...],
+        *,
+        capability_help: Callable[[MemoryOwnerId], str] | None = None,
     ) -> None:
         self._conversation_service = conversation_service
         self._allowed_user_ids = frozenset(allowed_user_ids)
+        self._capability_help = capability_help
 
     async def handle_text(
         self,
@@ -68,10 +71,10 @@ class TelegramAdapter:
             await reply(TOO_LONG_MESSAGE)
             return
         if text == "/start":
-            await reply(START_MESSAGE)
+            await reply(self._help_for(user_id, START_MESSAGE))
             return
         if text == "/help":
-            await reply(HELP_MESSAGE)
+            await reply(self._help_for(user_id, HELP_MESSAGE))
             return
         session_id = f"telegram:{user_id}"
         if text == "/new":
@@ -89,6 +92,14 @@ class TelegramAdapter:
             return
         for chunk in split_telegram_text(response):
             await reply(chunk)
+
+    def _help_for(self, user_id: int | None, fallback: str) -> str:
+        if self._capability_help is None:
+            return fallback
+        try:
+            return self._capability_help(MemoryOwnerId(f"telegram:{user_id}"))
+        except Exception:
+            return fallback
 
     async def handle_unsupported(
         self, *, user_id: int | None, chat_type: str | None, reply: Reply

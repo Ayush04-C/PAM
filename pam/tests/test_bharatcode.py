@@ -199,3 +199,46 @@ def test_provider_specific_settings_are_conditionally_required() -> None:
     assert gemini.bharatcode_api_key is None
     with pytest.raises(ValueError, match="BHARATCODE_API_KEY"):
         Settings(_env_file=None, model_provider="bharatcode")
+
+
+@pytest.mark.asyncio
+async def test_timeout_is_classified_without_exposing_request_or_credentials():
+    import httpx
+    from openai import APITimeoutError
+
+    from pam.conversation.provider import ModelTimeout
+
+    class TimeoutCompletions:
+        async def create(self, **kwargs):
+            raise APITimeoutError(request=httpx.Request("POST", "https://x/PRIVATE"))
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=TimeoutCompletions()))
+    provider = BharatCodeProvider("PRIVATE-KEY", "model", "https://x", client=client)
+    with pytest.raises(ModelTimeout) as error:
+        await provider.respond(TURN)
+    assert "PRIVATE" not in str(error.value) and error.value.__cause__ is None
+
+
+def test_timeout_configuration_is_bounded_and_used_by_client(monkeypatch):
+    from pam.conversation import bharatcode
+    from pam.conversation.factory import create_model_provider
+
+    captured = {}
+
+    def client(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(bharatcode, "AsyncOpenAI", client)
+    settings = Settings(
+        _env_file=None,
+        model_provider="bharatcode",
+        bharatcode_api_key="key",
+        bharatcode_timeout_seconds=90,
+    )
+    provider = create_model_provider(settings)
+    assert captured["timeout"] == 90
+    assert provider.data_destination.endswith("|" + settings.bharatcode_model)
+    for value in (0, 181):
+        with pytest.raises(ValueError):
+            Settings(_env_file=None, bharatcode_timeout_seconds=value)

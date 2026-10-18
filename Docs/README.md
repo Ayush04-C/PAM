@@ -29,14 +29,24 @@ environment.
 | System layout, trust, request flows | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Conversation orchestration and model providers | [CONVERSATION_AND_MODELS.md](CONVERSATION_AND_MODELS.md) |
 | Google OAuth and Calendar reads | [GOOGLE_CALENDAR_INTEGRATION.md](GOOGLE_CALENDAR_INTEGRATION.md) |
-| Private Calendar MCP server/client | [MCP_INTEGRATION.md](MCP_INTEGRATION.md) |
+| Shared Calendar/Drive MCP server and Calendar client | [MCP_INTEGRATION.md](MCP_INTEGRATION.md) |
 | Supermemory durable memory | [MEMORY_INTEGRATION.md](MEMORY_INTEGRATION.md) |
 | Telegram polling adapter | [TELEGRAM_INTEGRATION.md](TELEGRAM_INTEGRATION.md) |
 | Azure/PM2 deployment | [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) |
 | Verification and incident runbooks | [TESTING_AND_OPERATIONS.md](TESTING_AND_OPERATIONS.md) |
 | Proposed future phases | [ROADMAP.md](ROADMAP.md) |
-| Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
-| Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](GOOGLE_DRIVE_ARCHITECTURE.md) |
+| Drive Stage 1 boundaries and tests | [Driver/STAGE_01_BOUNDARIES.md](Driver/STAGE_01_BOUNDARIES.md) |
+| Drive Stage 2 consent and LLM boundaries | [Driver/STAGE_02_CONSENT.md](Driver/STAGE_02_CONSENT.md) |
+| Drive Stage 3 configuration and offline status | [Driver/STAGE_03_CONFIGURATION.md](Driver/STAGE_03_CONFIGURATION.md) |
+| Drive Stage 4 authorization and Google Cloud setup | [Driver/STAGE_04_AUTHORIZATION.md](Driver/STAGE_04_AUTHORIZATION.md) |
+| Drive Stage 5 bounded search and metadata | [Driver/STAGE_05_METADATA.md](Driver/STAGE_05_METADATA.md) |
+| Drive Stage 6 MCP tools and terminal testing | [Driver/STAGE_06_MCP_TOOLS.md](Driver/STAGE_06_MCP_TOOLS.md) |
+| Drive Stage 7 consent-gated assistant routing | [Driver/STAGE_07_ROUTING.md](Driver/STAGE_07_ROUTING.md) |
+| Drive Stage 8 file references and shared-memory boundaries | [Driver/STAGE_08_REFERENCES_AND_MEMORY.md](Driver/STAGE_08_REFERENCES_AND_MEMORY.md) |
+| Drive Stage 9 supported content and cited summaries | [Driver/STAGE_09_CONTENT.md](Driver/STAGE_09_CONTENT.md) |
+| Drive Stage 10 live acceptance checkpoint | [Driver/STAGE_10_ACCEPTANCE.md](Driver/STAGE_10_ACCEPTANCE.md) |
+| Proposed Google Drive MCP integration | [GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md](Driver/GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md) |
+| Proposed Drive workflow and architecture diagrams | [GOOGLE_DRIVE_ARCHITECTURE.md](Driver/GOOGLE_DRIVE_ARCHITECTURE.md) |
 | Availability presentation contract | [AVAILABILITY_PRESENTATION.md](AVAILABILITY_PRESENTATION.md) |
 
 ## Existing focused local guides
