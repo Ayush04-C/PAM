@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from dataclasses import replace
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -79,6 +81,7 @@ async def test_direct_response_sends_system_user_and_approved_schema() -> None:
     assert request["messages"][0]["content"] == TURN.system_instruction
     assert request["messages"][1]["content"] == TURN.user_message
     assert request["tools"][0]["function"]["parameters"] == dict(TOOL.input_schema)
+    assert request["tool_choice"] == "auto"
     assert "bc-key-do-not-leak" not in str(request)
 
 
@@ -146,6 +149,136 @@ async def test_tool_call_id_and_result_round_trip() -> None:
         "tool_call_id": "call-123",
         "content": '{"availability":"Free day"}',
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_tools", [False, True])
+@pytest.mark.parametrize("after_tool", [False, True])
+async def test_sdk_request_accepts_chat_and_tool_continuations(
+    with_tools: bool, after_tool: bool
+) -> None:
+    """Exercise real SDK serialization against an endpoint rejecting empty tools."""
+    import httpx
+    from openai import AsyncOpenAI
+
+    requests: list[dict[str, Any]] = []
+
+    def endpoint(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requests.append(payload)
+        if payload.get("tools") == [] or (
+            "tool_choice" in payload and "tools" not in payload
+        ):
+            return httpx.Response(400, json={"error": {"message": "invalid tools"}})
+        return httpx.Response(
+            200,
+            json={
+                "id": "synthetic",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "Hello."},
+                    }
+                ],
+            },
+        )
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(endpoint)) as http,
+        AsyncOpenAI(
+            api_key="synthetic-key",
+            base_url="https://example.test/v1",
+            http_client=http,
+            max_retries=0,
+        ) as sdk,
+    ):
+        provider = BharatCodeProvider("key", "model", "https://x", client=sdk)
+        turn = replace(TURN, tools=TURN.tools if with_tools else ())
+        if after_tool:
+            result = await provider.respond_after_tool(
+                turn,
+                ToolCall(TOOL.name, {}, "call-1"),
+                ToolResult(TOOL.name, {"availability": "Free day"}),
+            )
+        else:
+            result = await provider.respond(turn)
+    assert result.text == "Hello."
+    request = requests[0]
+    assert ("tools" in request) is with_tools
+    assert ("tool_choice" in request) is with_tools
+    if after_tool:
+        assert request["messages"][-1]["role"] == "tool"
+        assert request["messages"][-1]["tool_call_id"] == "call-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "category", "status"),
+    [
+        ("bad_request", "bad_request", 400),
+        ("timeout", "timeout", None),
+        ("invalid", "invalid_response", None),
+        ("unexpected", "unexpected_error", None),
+    ],
+)
+@pytest.mark.parametrize("after_tool", [False, True])
+async def test_failure_logs_are_safe_and_identify_request_phase(
+    failure: str,
+    category: str,
+    status: int | None,
+    after_tool: bool,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+    from openai import APITimeoutError, BadRequestError
+
+    from pam.logging import JsonFormatter
+
+    private = "PRIVATE-KEY-PROMPT-DOCUMENT"
+    monkeypatch.setattr(logging.getLogger("pam"), "propagate", True)
+
+    class FailingCompletions:
+        async def create(self, **kwargs: Any) -> object:
+            request = httpx.Request("POST", "https://example.test/" + private)
+            if failure == "bad_request":
+                raise BadRequestError(
+                    private,
+                    response=httpx.Response(400, request=request),
+                    body={"message": private},
+                )
+            if failure == "timeout":
+                raise APITimeoutError(request=request)
+            if failure == "unexpected":
+                raise RuntimeError(private)
+            return completion(SimpleNamespace(content=None, tool_calls=[]))
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=FailingCompletions()))
+    provider = BharatCodeProvider(private, "model", "https://x", client=client)
+    turn = replace(TURN, user_message=private)
+    with pytest.raises(ModelUnavailable):
+        if after_tool:
+            await provider.respond_after_tool(
+                turn,
+                ToolCall(TOOL.name, {}, "call-1"),
+                ToolResult(TOOL.name, {"availability": private}),
+            )
+        else:
+            await provider.respond(turn)
+    records = [r for r in caplog.records if r.name == "pam.conversation.bharatcode"]
+    assert len(records) == 1
+    payload = json.loads(JsonFormatter().format(records[0]))
+    assert payload["failure_kind"] == category
+    assert payload["http_status"] == status
+    assert payload["phase"] == ("after_tool" if after_tool else "initial")
+    assert payload["tool_count"] == 1
+    assert payload["elapsed_ms"] >= 0
+    assert records[0].exc_info is None
+    assert private not in json.dumps(payload)
 
 
 @pytest.mark.asyncio
