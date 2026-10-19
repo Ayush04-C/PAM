@@ -20,6 +20,23 @@ The `ModelProvider` protocol has `respond` and `respond_after_tool` methods. `Bh
 
 Provider exceptions are normalized to an assistant-facing unavailable message. PAM does not reveal SDK responses, API keys, requests, or tool internals in that message.
 
+BharatCode requests omit both `tools` and `tool_choice` when no tools are offered;
+an empty `tools` array is rejected by the provider. Tool-enabled initial requests
+and continuations retain the approved schemas and automatic tool selection.
+This fixes the confirmed empty-tool HTTP 400, not upstream timeouts or invalid
+Google grants. Offline SDK transport tests cover both paths and continuations.
+
+Failures emit a warning from `pam.conversation.bharatcode` with a fixed
+`failure_kind`, `phase` (`initial` or `after_tool`), numeric `http_status` when
+available, `elapsed_ms`, and `tool_count`. Timing covers the adapter request and
+response parsing, including SDK retries; it excludes queueing and tool execution.
+Categories distinguish timeout, authentication, rate limit, bad request, missing
+endpoint/model, connection, other provider errors, invalid responses and unexpected
+failures. Logs contain no provider error text/body, traceback, prompt, document,
+credential, model URL or user identifier. No debug flag is needed for failures.
+Use `pm2 logs pam-telegram --lines 100 --nostream` to inspect recent failures;
+tool-name debug logging remains a separate optional setting.
+
 BharatCode request timeouts have a distinct safe `timed out` response. They do
 not mean MCP tools are disconnected: a failure before the first tool call leaves
 no file choices, so `file 1` follow-ups must wait for a successful search.
