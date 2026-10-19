@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Any
 
 from openai import (
@@ -18,6 +20,8 @@ from openai import (
 
 from pam.conversation.models import ModelDecision, ModelTurn, ToolCall, ToolResult
 from pam.conversation.provider import ModelTimeout, ModelUnavailable
+
+logger = logging.getLogger("pam.conversation.bharatcode")
 
 
 class BharatCodeProvider:
@@ -39,9 +43,9 @@ class BharatCodeProvider:
         self.data_destination = f"bharatcode:{base_url.rstrip('/')}|{model}"
 
     async def respond(self, turn: ModelTurn) -> ModelDecision:
-        completion = await self._create_completion(self._initial_messages(turn), turn)
-        message = self._message_from_completion(completion)
-        return self._decision_from_message(message)
+        return await self._create_decision(
+            self._initial_messages(turn), turn, "initial"
+        )
 
     async def respond_after_tool(
         self, turn: ModelTurn, tool_call: ToolCall, tool_result: ToolResult
@@ -52,9 +56,7 @@ class BharatCodeProvider:
             *self._initial_messages(turn),
             *self._tool_messages(tool_call, tool_result),
         ]
-        completion = await self._create_completion(messages, turn)
-        message = self._message_from_completion(completion)
-        return self._decision_from_message(message)
+        return await self._create_decision(messages, turn, "after_tool")
 
     @staticmethod
     def _tool_messages(
@@ -86,28 +88,21 @@ class BharatCodeProvider:
             },
         ]
 
-    async def _create_completion(
-        self, messages: list[dict[str, Any]], turn: ModelTurn
-    ) -> Any:
+    async def _create_decision(
+        self, messages: list[dict[str, Any]], turn: ModelTurn, phase: str
+    ) -> ModelDecision:
+        started = time.monotonic()
         try:
-            return await self._client.chat.completions.create(
-                model=self._model,
-                messages=messages,
-                tools=[
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": dict(tool.input_schema),
-                        },
-                    }
-                    for tool in turn.tools
-                ],
-                tool_choice="auto",
+            completion = await self._create_completion(messages, turn)
+            return self._decision_from_message(
+                self._message_from_completion(completion)
             )
-        except APITimeoutError:
+        except APITimeoutError as error:
+            self._log_failure(error, phase, started, len(turn.tools))
             raise ModelTimeout("model provider request timed out") from None
+        except ModelUnavailable as error:
+            self._log_failure(error, phase, started, len(turn.tools))
+            raise
         except (
             APIConnectionError,
             APIError,
@@ -116,9 +111,65 @@ class BharatCodeProvider:
             NotFoundError,
             RateLimitError,
         ) as error:
+            self._log_failure(error, phase, started, len(turn.tools))
             raise ModelUnavailable("model provider is unavailable") from error
         except Exception as error:
+            self._log_failure(error, phase, started, len(turn.tools))
             raise ModelUnavailable("model provider is unavailable") from error
+
+    async def _create_completion(
+        self, messages: list[dict[str, Any]], turn: ModelTurn
+    ) -> Any:
+        request: dict[str, Any] = {"model": self._model, "messages": messages}
+        if turn.tools:
+            request["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": dict(tool.input_schema),
+                    },
+                }
+                for tool in turn.tools
+            ]
+            request["tool_choice"] = "auto"
+        return await self._client.chat.completions.create(**request)
+
+    @staticmethod
+    def _log_failure(
+        error: Exception, phase: str, started: float, tool_count: int
+    ) -> None:
+        # Fixed categories only: SDK messages, bodies, URLs and tracebacks may
+        # contain prompts, retrieved documents or credentials.
+        category = "unexpected_error"
+        for error_type, name in (
+            (APITimeoutError, "timeout"),
+            (AuthenticationError, "authentication"),
+            (RateLimitError, "rate_limit"),
+            (BadRequestError, "bad_request"),
+            (NotFoundError, "not_found"),
+            (APIConnectionError, "connection"),
+            (APIError, "provider_error"),
+            (ModelUnavailable, "invalid_response"),
+        ):
+            if isinstance(error, error_type):
+                category = name
+                break
+        status = (
+            getattr(error, "status_code", None) if isinstance(error, APIError) else None
+        )
+        logger.warning(
+            "model request failed",
+            extra={
+                "provider": "bharatcode",
+                "phase": phase,
+                "failure_kind": category,
+                "http_status": status if type(status) is int else None,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+                "tool_count": tool_count,
+            },
+        )
 
     @staticmethod
     def _initial_messages(turn: ModelTurn) -> list[dict[str, Any]]:
